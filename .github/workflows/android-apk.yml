@@ -1,0 +1,119 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine next release version
+        id: version
+        shell: bash
+        run: |
+          git fetch --tags --force
+          LAST=$(git tag -l 'v[0-9]*' | sed 's/^v//' | grep -E '^[0-9]+$' | sort -n | tail -1)
+          if [ -z "$LAST" ]; then LAST=0; fi
+          NEXT=$((LAST + 1))
+          echo "number=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
+          echo "EVRASIA_HD_VERSION=$NEXT" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare app assets
+        run: |
+          base64 -d assets/icon.png.b64 > assets/icon.png
+          test -s assets/icon.png
+          test -s assets/evrasia_hd_glitch.mp4
+
+      - name: TypeScript check
+        run: pnpm exec tsc --noEmit
+
+      - name: Remember source screen hash
+        shell: bash
+        run: echo "SOURCE_SCREEN_HASH=$(sha256sum 'app/(tabs)/index.tsx' | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Expo prebuild
+        run: pnpm exec expo prebuild --platform android --no-install --clean
+
+      - name: Verify generated Android project
+        shell: bash
+        run: |
+          grep -Eq '^newArchEnabled=true$' android/gradle.properties
+          grep -Eq '^reactNativeArchitectures=arm64-v8a$' android/gradle.properties
+          grep -Fq 'android:windowSoftInputMode="adjustResize"' android/app/src/main/AndroidManifest.xml
+          ACTUAL=$(sha256sum 'app/(tabs)/index.tsx' | cut -d' ' -f1)
+          test "$SOURCE_SCREEN_HASH" = "$ACTUAL" || { echo 'prebuild changed source index.tsx' >&2; exit 1; }
+          grep -Fq 'EVRASIA_DIRECTIONAL_AUTOSCROLL' node_modules/react-native-draggable-flatlist/src/hooks/useAutoScroll.tsx
+
+      - name: TypeScript check after prebuild
+        run: pnpm exec tsc --noEmit
+
+      - name: Build release APK
+        run: cd android && ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Verify APK contains arm64 only
+        shell: bash
+        run: |
+          APK='android/app/build/outputs/apk/release/app-release.apk'
+          unzip -l "$APK" | grep -Fq 'lib/arm64-v8a/'
+          if unzip -l "$APK" | grep -Eq 'lib/(armeabi-v7a|x86|x86_64)/'; then
+            echo 'APK contains unexpected ABI' >&2
+            exit 1
+          fi
+
+      - name: Rename APK
+        shell: bash
+        run: cp android/app/build/outputs/apk/release/app-release.apk "evrasia-hd-v${{ steps.version.outputs.number }}-arm64.apk"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Евразия HD v${{ steps.version.outputs.number }}
+          files: evrasia-hd-v${{ steps.version.outputs.number }}-arm64.apk
+          make_latest: true
+
+      - name: Delete completed Actions artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].id' | while read -r ARTIFACT_ID; do
+            [ -z "$ARTIFACT_ID" ] && continue
+            gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID"
+          done
