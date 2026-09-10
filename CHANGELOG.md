@@ -1,6 +1,26 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v5-START -->
+## v5 — 2026-09-10T17:43:45Z
+
+- Release commit: `2a61e76c3e14b85ef42b9047e28ea0fddb2d22dd`
+- Artifact: `evrasia-hd-v5.apk`
+- SHA-256: `e9d80bcfa3cb328187e22eb6ddf706d16c92ec28749bde2e2394b11a936d853f`
+- Previous release: **v4**
+
+### Changes
+
+- experiment: replace expo-video with native startup video [release]
+- fix: type native startup video props [release]
+
+### Changed files
+
+- `app/(tabs)/index.tsx`
+- `package.json`
+- `plugins/with-sms-code.js`
+- `pnpm-lock.yaml`
+<!-- AUTO-CHANGELOG-v5-END -->
 <!-- AUTO-CHANGELOG-v4-START -->
 ## v4 — 2026-09-10T15:47:44Z
 

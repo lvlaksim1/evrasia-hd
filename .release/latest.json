@@ -1,27 +1,25 @@
 {
   "schemaVersion": 1,
-  "releaseNumber": 4,
-  "tag": "v4",
-  "versionCode": 4,
-  "versionName": "v4",
+  "releaseNumber": 5,
+  "tag": "v5",
+  "versionCode": 5,
+  "versionName": "v5",
   "packageId": "com.evrasia.hd",
-  "commit": "7ff14b21b53f80bba8608d962ccc6c16ffba039f",
-  "artifact": "evrasia-hd-v4.apk",
-  "sha256": "415213992b643e8f0687f8970d11084e6801e0f4b6ca5786d1552f01d1ecd446",
-  "publishedAt": "2026-09-10T15:47:44Z",
-  "previousRelease": "v3",
-  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v4",
-  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v4/evrasia-hd-v4.apk",
+  "commit": "2a61e76c3e14b85ef42b9047e28ea0fddb2d22dd",
+  "artifact": "evrasia-hd-v5.apk",
+  "sha256": "e9d80bcfa3cb328187e22eb6ddf706d16c92ec28749bde2e2394b11a936d853f",
+  "publishedAt": "2026-09-10T17:43:45Z",
+  "previousRelease": "v4",
+  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v5",
+  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v5/evrasia-hd-v5.apk",
   "commits": [
-    "ci: prepare dependency trimming experiment",
-    "ci: fix dependency trimming experiment workflow",
-    "experiment: trim unused native dependencies",
-    "experiment: release trimmed dependency build [release]"
+    "experiment: replace expo-video with native startup video [release]",
+    "fix: type native startup video props [release]"
   ],
   "changedFiles": [
-    "app.config.ts",
     "app/(tabs)/index.tsx",
     "package.json",
+    "plugins/with-sms-code.js",
     "pnpm-lock.yaml"
   ]
 }
