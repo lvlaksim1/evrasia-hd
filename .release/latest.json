@@ -1,21 +1,23 @@
 {
   "schemaVersion": 1,
-  "releaseNumber": 12,
-  "tag": "v12",
-  "versionCode": 12,
-  "versionName": "v12",
+  "releaseNumber": 13,
+  "tag": "v13",
+  "versionCode": 13,
+  "versionName": "v13",
   "packageId": "com.evrasia.hd",
-  "commit": "3c8991be7d9ad02126c76a7b66363b0eea88f64e",
-  "artifact": "evrasia-hd-v12.apk",
-  "sha256": "fd91f57b163d0b85f266972d3805236a1251e4d78e503a961b4f1510cccaed88",
-  "publishedAt": "2026-09-10T22:23:02Z",
-  "previousRelease": "v11",
-  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v12",
-  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v12/evrasia-hd-v12.apk",
+  "commit": "1d6bc8a0a7172987823c3c62127d5e6977908142",
+  "artifact": "evrasia-hd-v13.apk",
+  "sha256": "52d816f3c7117447a622e70f224c0b84d83e8686cde6d6908c57a042e962f848",
+  "publishedAt": "2026-09-10T23:04:59Z",
+  "previousRelease": "v12",
+  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v13",
+  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v13/evrasia-hd-v13.apk",
   "commits": [
-    "v12: remove drag landing pulse [release]"
+    "ci: send APK file to Telegram when under 50 MiB",
+    "v13: eliminate reorder commit flicker [release]"
   ],
   "changedFiles": [
+    ".github/workflows/_release-apk.yml",
     "App.tsx"
   ]
 }

@@ -1,6 +1,24 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v13-START -->
+## v13 — 2026-09-10T23:04:59Z
+
+- Release commit: `1d6bc8a0a7172987823c3c62127d5e6977908142`
+- Artifact: `evrasia-hd-v13.apk`
+- SHA-256: `52d816f3c7117447a622e70f224c0b84d83e8686cde6d6908c57a042e962f848`
+- Previous release: **v12**
+
+### Changes
+
+- ci: send APK file to Telegram when under 50 MiB
+- v13: eliminate reorder commit flicker [release]
+
+### Changed files
+
+- `.github/workflows/_release-apk.yml`
+- `App.tsx`
+<!-- AUTO-CHANGELOG-v13-END -->
 <!-- AUTO-CHANGELOG-v12-START -->
 ## v12 — 2026-09-10T22:23:02Z
 
