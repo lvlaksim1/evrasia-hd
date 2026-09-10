@@ -1,6 +1,22 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v10-START -->
+## v10 — 2026-09-10T21:06:19Z
+
+- Release commit: `d97cb08c079d8277c57a35ec0846967544a3384b`
+- Artifact: `evrasia-hd-v10.apk`
+- SHA-256: `31fcdd2848b080b88ddc6dc958a800d01e5630a9f03b6ded0e032863a669ae8a`
+- Previous release: **v9**
+
+### Changes
+
+- v10: fix smooth card reorder [release]
+
+### Changed files
+
+- `App.tsx`
+<!-- AUTO-CHANGELOG-v10-END -->
 <!-- AUTO-CHANGELOG-v9-START -->
 ## v9 — 2026-09-10T20:12:12Z
 
