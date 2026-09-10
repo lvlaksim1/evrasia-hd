@@ -84,14 +84,14 @@ function checkinCountdown(lastCheckinAt?: number, now = Date.now()) {
 function displayRestaurantKind(kind?: Restaurant["kind"]) { return kind === "alias" ? "синоним" : "адрес"; }
 
 type SortableControls = { onLongPress: () => void; onPressOut: () => void; isActive: boolean; blockPress: boolean };
-type DragPreview = { from: number; to: number } | null;
+type DragPreview = { from: number; to: number; height: number } | null;
 
-function SortableAccountRow({ index, count, shiftDirection, dragging, onDragPreview, onDragCancel, onReorder, onDragEnd, children }: {
+function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview, onDragCancel, onReorder, onDragEnd, children }: {
   index: number;
   count: number;
-  shiftDirection: -1 | 0 | 1;
+  shiftOffset: number;
   dragging: boolean;
-  onDragPreview: (from: number, to: number) => void;
+  onDragPreview: (from: number, to: number, height: number) => void;
   onDragCancel: () => void;
   onReorder: (from: number, to: number) => void;
   onDragEnd: () => void;
@@ -122,16 +122,15 @@ function SortableAccountRow({ index, count, shiftDirection, dragging, onDragPrev
 
   useEffect(() => {
     if (!dragging) return;
-    const target = shiftDirection * rowHeightRef.current;
     Animated.spring(neighborY, {
-      toValue: target,
+      toValue: shiftOffset,
       damping: 24,
       stiffness: 260,
       mass: 0.7,
       overshootClamping: true,
       useNativeDriver: true,
     }).start();
-  }, [dragging, neighborY, shiftDirection]);
+  }, [dragging, neighborY, shiftOffset]);
 
   useLayoutEffect(() => {
     if (!dragging) {
@@ -204,7 +203,7 @@ function SortableAccountRow({ index, count, shiftDirection, dragging, onDragPrev
 
       if (target !== hoverIndexRef.current) {
         hoverIndexRef.current = target;
-        previewRef.current(from, target);
+        previewRef.current(from, target, height);
       }
 
       translateY.setValue(gesture.dy);
@@ -223,7 +222,7 @@ function SortableAccountRow({ index, count, shiftDirection, dragging, onDragPrev
     translateY.setValue(0);
     setBlockPress(true);
     setIsActive(true);
-    previewRef.current(index, index);
+    previewRef.current(index, index, Math.max(rowHeightRef.current, 1));
     Animated.spring(lift, { toValue: 1, damping: 16, stiffness: 260, mass: 0.6, useNativeDriver: true }).start();
   };
 
@@ -644,16 +643,16 @@ export default function HomeScreen() {
         ListEmptyComponent={<View style={styles.emptyCard}><Text style={styles.emptyTitle}>Аккаунтов пока нет</Text><Text style={styles.muted}>Добавьте аккаунт в настройках.</Text></View>}
         renderItem={({ item: account, index: itemIndex }) => {
           const timer = checkinCountdown(account.lastCheckinAt, clock);
-          const shiftDirection: -1 | 0 | 1 = !dragPreview ? 0
-            : itemIndex > dragPreview.from && itemIndex <= dragPreview.to ? -1
-            : itemIndex < dragPreview.from && itemIndex >= dragPreview.to ? 1
+          const shiftOffset = !dragPreview ? 0
+            : itemIndex > dragPreview.from && itemIndex <= dragPreview.to ? -dragPreview.height
+            : itemIndex < dragPreview.from && itemIndex >= dragPreview.to ? dragPreview.height
             : 0;
           return <SortableAccountRow
             index={itemIndex}
             count={accounts.length}
-            shiftDirection={shiftDirection}
+            shiftOffset={shiftOffset}
             dragging={dragPreview !== null}
-            onDragPreview={(from, to) => setDragPreview(current => current?.from === from && current.to === to ? current : { from, to })}
+            onDragPreview={(from, to, height) => setDragPreview(current => current?.from === from && current.to === to && current.height === height ? current : { from, to, height })}
             onDragCancel={() => setDragPreview(null)}
             onReorder={(from, to) => {
               setAccounts(currentAccounts => {
