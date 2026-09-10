@@ -1,0 +1,41 @@
+name: V8 Install Media Assets
+
+on:
+  push:
+    branches:
+      - fix/v8-media-drag
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    if: ${{ !contains(github.event.head_commit.message, '[v8-media-ready]') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v8-media-drag
+          fetch-depth: 0
+
+      - name: Reconstruct optimized media
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat assets/.v8/logo.* | base64 -d > assets/evrasia_hd_logo.jpg
+          cat assets/.v8/video.* | base64 -d > assets/evrasia_hd_glitch.mp4
+          echo "3e36acc4b7ba2cec07ca3e18fa59b3fab582a0522ef1cbe0e0f8fe803f52b53c  assets/evrasia_hd_logo.jpg" | sha256sum -c -
+          echo "ed6f44dc7e7c384aa70e97ca46bfc75963dbd18f145b25082e435b9b71cd85b4  assets/evrasia_hd_glitch.mp4" | sha256sum -c -
+          test "$(stat -c%s assets/evrasia_hd_logo.jpg)" = "14908"
+          test "$(stat -c%s assets/evrasia_hd_glitch.mp4)" = "30645"
+
+      - name: Commit binary media
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f assets/evrasia_hd_logo.jpg assets/evrasia_hd_glitch.mp4
+          git rm -r assets/.v8
+          git commit -m "v8: install optimized default media [v8-media-ready]"
+          git push origin HEAD:fix/v8-media-drag
