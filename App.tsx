@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
+  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, LayoutAnimation, Modal,
   PanResponder, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View,
 } from "react-native";
-import { NativeModules, requireNativeComponent } from "react-native";
-import type { ViewProps } from "react-native";
+import { NativeModules } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -29,8 +28,6 @@ const AppearanceMedia = NativeModules.AppearanceMedia as {
   pickLauncherIcon: () => Promise<string | null>;
   reset: (kind: "logo" | "video" | "icon") => Promise<boolean>;
 };
-type StartupVideoProps = ViewProps & { videoUri?: string };
-const NativeStartupVideo = requireNativeComponent<StartupVideoProps>("StartupVideo");
 const APP_VERSION = AppearanceMedia?.appVersion || "v1";
 const CHECKIN_WINDOW_MS = 3 * 60 * 60 * 1000;
 type SettingsSection = "root" | "restaurants" | "cardTypes" | "appearance" | "log";
@@ -86,66 +83,115 @@ function checkinCountdown(lastCheckinAt?: number, now = Date.now()) {
 }
 function displayRestaurantKind(kind?: Restaurant["kind"]) { return kind === "alias" ? "синоним" : "адрес"; }
 
-function StartupIntro({ videoUri }: { videoUri?: string }) {
-  return <View style={styles.startup}><NativeStartupVideo style={styles.startupVideo} videoUri={videoUri || ""} /></View>;
-}
+type SortableControls = { onLongPress: () => void; onPressOut: () => void; isActive: boolean; blockPress: boolean };
 
-type SortableControls = { onLongPress: () => void; onPressOut: () => void; isActive: boolean };
-
-function SortableAccountRow({ index, count, onReorder, children }: {
+function SortableAccountRow({ index, count, onReorder, onDragEnd, children }: {
   index: number;
   count: number;
   onReorder: (from: number, to: number) => void;
+  onDragEnd: () => void;
   children: (controls: SortableControls) => ReactNode;
 }) {
   const translateY = useRef(new Animated.Value(0)).current;
+  const lift = useRef(new Animated.Value(0)).current;
   const activeRef = useRef(false);
   const claimedRef = useRef(false);
+  const movedRef = useRef(false);
+  const indexRef = useRef(index);
+  const countRef = useRef(count);
+  const rowHeightRef = useRef(140);
+  const offsetRef = useRef(0);
+  const reorderRef = useRef(onReorder);
+  const dragEndRef = useRef(onDragEnd);
   const [isActive, setIsActive] = useState(false);
-  const [rowHeight, setRowHeight] = useState(140);
+  const [blockPress, setBlockPress] = useState(false);
 
-  const finishDrag = (dy: number) => {
-    const step = Math.round(dy / Math.max(rowHeight, 1));
-    const target = Math.max(0, Math.min(count - 1, index + step));
-    translateY.setValue(0);
+  indexRef.current = index;
+  countRef.current = count;
+  reorderRef.current = onReorder;
+  dragEndRef.current = onDragEnd;
+
+  const finishDrag = () => {
+    if (!activeRef.current) return;
     activeRef.current = false;
     claimedRef.current = false;
-    setIsActive(false);
-    if (target !== index) onReorder(index, target);
+    offsetRef.current = 0;
+    const moved = movedRef.current;
+    movedRef.current = false;
+    Animated.parallel([
+      Animated.spring(translateY, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
+      Animated.spring(lift, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
+    ]).start(() => setIsActive(false));
+    if (moved) dragEndRef.current();
+    setTimeout(() => setBlockPress(false), moved ? 260 : 80);
   };
 
   const responder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponder: (_, gesture) => activeRef.current && Math.abs(gesture.dy) > 2,
+    onMoveShouldSetPanResponderCapture: (_, gesture) => activeRef.current && Math.abs(gesture.dy) > 2,
     onPanResponderGrant: () => { claimedRef.current = true; },
-    onPanResponderMove: (_, gesture) => { if (activeRef.current) translateY.setValue(gesture.dy); },
-    onPanResponderRelease: (_, gesture) => finishDrag(gesture.dy),
-    onPanResponderTerminate: (_, gesture) => finishDrag(gesture.dy),
+    onPanResponderMove: (_, gesture) => {
+      if (!activeRef.current) return;
+      const height = Math.max(rowHeightRef.current, 1);
+      let translation = gesture.dy + offsetRef.current;
+      let current = indexRef.current;
+      let target = current;
+
+      while (translation > height * 0.52 && target < countRef.current - 1) {
+        target += 1;
+        translation -= height;
+        offsetRef.current -= height;
+      }
+      while (translation < -height * 0.52 && target > 0) {
+        target -= 1;
+        translation += height;
+        offsetRef.current += height;
+      }
+
+      if (target !== current) {
+        movedRef.current = true;
+        LayoutAnimation.configureNext({
+          duration: 150,
+          update: { type: LayoutAnimation.Types.easeInEaseOut },
+          create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+          delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+        });
+        reorderRef.current(current, target);
+        indexRef.current = target;
+      }
+      translateY.setValue(translation);
+    },
+    onPanResponderRelease: finishDrag,
+    onPanResponderTerminate: finishDrag,
     onPanResponderTerminationRequest: () => false,
-  }), [count, index, onReorder, rowHeight, translateY]);
+  }), [lift, translateY]);
 
   const onLongPress = () => {
     activeRef.current = true;
     claimedRef.current = false;
+    movedRef.current = false;
+    indexRef.current = index;
+    offsetRef.current = 0;
+    setBlockPress(true);
     setIsActive(true);
+    Animated.spring(lift, { toValue: 1, damping: 16, stiffness: 260, mass: 0.6, useNativeDriver: true }).start();
   };
 
   const onPressOut = () => {
     setTimeout(() => {
-      if (!claimedRef.current) {
-        activeRef.current = false;
-        setIsActive(false);
-        translateY.setValue(0);
-      }
+      if (activeRef.current && !claimedRef.current) finishDrag();
     }, 0);
   };
 
+  const scale = lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] });
+
   return <Animated.View
     {...responder.panHandlers}
-    onLayout={event => setRowHeight(event.nativeEvent.layout.height)}
-    style={[styles.accountItem, { transform: [{ translateY }] }, isActive && styles.dragActive]}
+    onLayout={event => { rowHeightRef.current = event.nativeEvent.layout.height; }}
+    style={[styles.accountItem, { transform: [{ translateY }, { scale }] }, isActive && styles.dragActive]}
   >
-    {children({ onLongPress, onPressOut, isActive })}
+    {children({ onLongPress, onPressOut, isActive, blockPress })}
   </Animated.View>;
 }
 
@@ -184,7 +230,6 @@ export default function HomeScreen() {
   const [dialog, setDialog] = useState<AppDialog>(null);
   const [clock, setClock] = useState(Date.now());
   const [bootReady, setBootReady] = useState(false);
-  const [introDone, setIntroDone] = useState(false);
   const [appearance, setAppearance] = useState({ logoUri: "", videoUri: "", iconUri: "" });
   const [actionLog, setActionLog] = useState<ActionLogEntry[]>([]);
   const actionLogRef = useRef<ActionLogEntry[]>([]);
@@ -207,12 +252,11 @@ export default function HomeScreen() {
       setBootReady(true);
     });
     const clockTimer = setInterval(() => setClock(Date.now()), 1000);
-    const introTimer = setTimeout(() => setIntroDone(true), 2500);
-    return () => { alive = false; clearInterval(clockTimer); clearTimeout(introTimer); };
+    return () => { alive = false; clearInterval(clockTimer); };
   }, []);
   useEffect(() => {
-    if (bootReady && introDone) Animated.timing(mainOpacity, { toValue: 1, duration: 320, useNativeDriver: true }).start();
-  }, [bootReady, introDone, mainOpacity]);
+    if (bootReady) Animated.timing(mainOpacity, { toValue: 1, duration: 320, useNativeDriver: true }).start();
+  }, [bootReady, mainOpacity]);
 
   const filteredRestaurants = useMemo(() => {
     const q = normTitle(query);
@@ -524,7 +568,7 @@ export default function HomeScreen() {
     setSettingsVisible(false);
   }
 
-  if (!(bootReady && introDone)) return <><StatusBar barStyle="light-content" /><StartupIntro videoUri={appearance.videoUri} /></>;
+  if (!bootReady) return <View style={styles.startup}><StatusBar barStyle="light-content" /></View>;
 
   return <View style={styles.safe}>
     <StatusBar barStyle="light-content" />
@@ -534,14 +578,14 @@ export default function HomeScreen() {
         <Pressable style={styles.squareHeaderButton} onPress={() => { setSettingsSection("root"); setSettingsVisible(true); }}>
           <View style={styles.menuLine} /><View style={styles.menuLine} /><View style={styles.menuLine} />
         </Pressable>
-        {appearance.logoUri ? <Image source={{ uri: appearance.logoUri }} style={styles.customBrandLogo} resizeMode="contain" /> : <View style={styles.brandWrap}><Text style={styles.brandText}>Евразия</Text><View style={styles.hdSplash}><Text style={styles.hdText}>hd</Text></View></View>}
+        {appearance.logoUri ? <Image source={{ uri: appearance.logoUri }} style={styles.customBrandLogo} resizeMode="contain" /> : <Image source={require("./assets/evrasia_hd_logo.jpg")} style={styles.customBrandLogo} resizeMode="contain" />}
         <Pressable style={styles.squareHeaderButton} onPress={() => void refreshAll()} disabled={refreshingAll || !accounts.length}>
           {refreshingAll ? <ActivityIndicator color="#F4C35A" /> : <Text style={[styles.headerRefresh, !accounts.length && styles.disabledText]}>↻</Text>}
         </Pressable>
       </View>
       <FlatList
         data={accounts}
-        keyExtractor={(account, itemIndex) => `${account.phone}_${itemIndex}`}
+        keyExtractor={account => account.phone}
         style={styles.flex}
         contentContainerStyle={styles.content}
         ListEmptyComponent={<View style={styles.emptyCard}><Text style={styles.emptyTitle}>Аккаунтов пока нет</Text><Text style={styles.muted}>Добавьте аккаунт в настройках.</Text></View>}
@@ -551,18 +595,20 @@ export default function HomeScreen() {
             index={itemIndex}
             count={accounts.length}
             onReorder={(from, to) => {
-              const next = [...accounts];
-              const [moved] = next.splice(from, 1);
-              next.splice(to, 0, moved);
-              setAccounts(next);
-              void saveAccounts(next);
-              appendLog("Аккаунты: изменён порядок карточек");
+              setAccounts(currentAccounts => {
+                const next = [...currentAccounts];
+                const [moved] = next.splice(from, 1);
+                next.splice(to, 0, moved);
+                void saveAccounts(next);
+                return next;
+              });
             }}
+            onDragEnd={() => appendLog("Аккаунты: изменён порядок карточек")}
           >
-            {({ onLongPress, onPressOut, isActive }) => <View style={styles.accountCard}>
+            {({ onLongPress, onPressOut, isActive, blockPress }) => <View style={styles.accountCard}>
               <Pressable
                 style={styles.accountMain}
-                onPress={() => { if (!isActive) openProfile(account); }}
+                onPress={() => { if (!blockPress) openProfile(account); }}
                 onLongPress={onLongPress}
                 onPressOut={onPressOut}
                 delayLongPress={360}
@@ -616,7 +662,7 @@ export default function HomeScreen() {
           <View style={styles.appearanceCard}>
             <Text style={styles.appearanceTitle}>Логотип на главном экране</Text>
             <Text style={styles.appearanceNote}>Выберите изображение из файлов устройства.</Text>
-            {appearance.logoUri ? <Image source={{ uri: appearance.logoUri }} style={styles.appearancePreview} resizeMode="contain" /> : null}
+            <Image source={appearance.logoUri ? { uri: appearance.logoUri } : require("./assets/evrasia_hd_logo.jpg")} style={styles.appearancePreview} resizeMode="contain" />
             <PrimaryButton title="Выбрать логотип" onPress={() => chooseAppearance("logo")} />
             {appearance.logoUri ? <SecondaryButton title="Вернуть стандартный" onPress={() => resetAppearance("logo")} /> : null}
           </View>
@@ -760,7 +806,6 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#081310" }, flex: { flex: 1 },
   startup: { flex: 1, backgroundColor: "#081310", alignItems: "center", justifyContent: "center" },
-  startupVideo: { width: "100%", aspectRatio: 1536 / 468, backgroundColor: "#081310" },
   mainHeader: { paddingTop: 46, paddingHorizontal: 18, paddingBottom: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   squareHeaderButton: { width: 48, height: 46, borderRadius: 15, borderWidth: 1, borderColor: "#36533F", backgroundColor: "#102019", alignItems: "center", justifyContent: "center", gap: 5 },
   menuLine: { width: 23, height: 2.5, borderRadius: 2, backgroundColor: "#F4C35A" },
@@ -771,10 +816,8 @@ const styles = StyleSheet.create({
   logRow: { paddingHorizontal: 18, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#1D3328" },
   logTime: { color: "#71857A", fontSize: 12, marginBottom: 4 },
   logMessage: { color: "#E8EFEA", fontSize: 14, lineHeight: 20 },
-  brandWrap: { flexDirection: "row", alignItems: "center" }, customBrandLogo: { width: 230, height: 62 }, brandText: { color: "#F4C35A", fontSize: 30, fontWeight: "900", fontStyle: "italic", letterSpacing: -1.1 },
-  hdSplash: { marginLeft: 5, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "#FF603E", borderTopLeftRadius: 18, borderTopRightRadius: 11, borderBottomLeftRadius: 9, borderBottomRightRadius: 20, transform: [{ rotate: "-9deg" }, { scaleX: 1.08 }] },
-  hdText: { color: "#FFF5D6", fontSize: 17, fontWeight: "900", fontStyle: "italic", letterSpacing: 0.8 },
-  content: { paddingHorizontal: 14, paddingBottom: 21 }, accountItem: { paddingBottom: 9 }, dragActive: { zIndex: 20, elevation: 8, opacity: 0.97 }, emptyCard: { backgroundColor: "#102019", borderRadius: 18, borderWidth: 1, borderColor: "#294536", padding: 17 },
+  customBrandLogo: { width: 230, height: 76 },
+  content: { paddingHorizontal: 14, paddingBottom: 21 }, accountItem: { paddingBottom: 9 }, dragActive: { zIndex: 30, elevation: 16, opacity: 0.99 }, emptyCard: { backgroundColor: "#102019", borderRadius: 18, borderWidth: 1, borderColor: "#294536", padding: 17 },
   emptyTitle: { color: "#F5F7F5", fontSize: 18, fontWeight: "900" }, muted: { color: "#81958A", fontSize: 12, marginTop: 4 },
   accountCard: { backgroundColor: "#102019", borderRadius: 19, borderWidth: 1, borderColor: "#2C503C", overflow: "hidden" }, accountMain: { paddingHorizontal: 13, paddingVertical: 11 },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, phone: { color: "#F5F7F5", fontSize: 15, fontWeight: "900" }, reload: { color: "#E6B44B", fontSize: 21 },
