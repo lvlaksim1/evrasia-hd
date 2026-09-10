@@ -322,11 +322,13 @@ jobs:
       - publish
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      contents: read
     steps:
-      - name: Send APK link to Telegram
+      - name: Send APK or link to Telegram
         id: notify
         env:
+          GH_TOKEN: ${{ github.token }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PROJECT_NAME: ${{ inputs.project_name }}
@@ -345,23 +347,78 @@ jobs:
           API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
           RELEASE_TAG="v${RELEASE_NUMBER}"
           APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${RELEASE_APK_FILENAME}"
-          printf -v TEXT '%s %s собран успешно.\n\nСкачать APK:\n%s' "$PROJECT_NAME" "$RELEASE_TAG" "$APK_URL"
+          TELEGRAM_MAX_FILE_BYTES=$((50 * 1024 * 1024))
+          DELIVERY_MODE="link"
+          APK_PATH=""
+
+          RELEASE_JSON=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>/dev/null || true)
+          APK_SIZE=$(printf '%s' "$RELEASE_JSON" | jq -r --arg name "$RELEASE_APK_FILENAME" '.assets[]? | select(.name == $name) | .size // empty' | head -1)
+
+          if [[ "$APK_SIZE" =~ ^[0-9]+$ ]]; then
+            echo "Published APK size: $APK_SIZE bytes"
+            if [ "$APK_SIZE" -le "$TELEGRAM_MAX_FILE_BYTES" ]; then
+              TELEGRAM_DIR="$RUNNER_TEMP/telegram-apk"
+              rm -rf "$TELEGRAM_DIR"
+              mkdir -p "$TELEGRAM_DIR"
+
+              if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$RELEASE_APK_FILENAME" --dir "$TELEGRAM_DIR" >/dev/null 2>&1; then
+                APK_PATH="$TELEGRAM_DIR/$RELEASE_APK_FILENAME"
+                if [ -s "$APK_PATH" ]; then
+                  ACTUAL_APK_SIZE=$(stat -c%s "$APK_PATH")
+                  echo "Downloaded APK size: $ACTUAL_APK_SIZE bytes"
+                  if [ "$ACTUAL_APK_SIZE" -le "$TELEGRAM_MAX_FILE_BYTES" ]; then
+                    DELIVERY_MODE="apk"
+                  else
+                    echo "::warning::Downloaded APK exceeds Telegram 50 MiB upload limit; sending release link instead"
+                  fi
+                else
+                  echo "::warning::Downloaded APK is missing or empty; sending release link instead"
+                fi
+              else
+                echo "::warning::Could not download published APK; sending release link instead"
+              fi
+            else
+              echo "APK exceeds Telegram 50 MiB upload limit; sending release link"
+            fi
+          else
+            echo "::warning::Could not determine published APK size; sending release link instead"
+          fi
 
           SUCCESS=false
-          for ATTEMPT in 1 2 3; do
-            if RESPONSE=$(curl --silent --show-error --fail-with-body -X POST "$API/sendMessage" --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=${TEXT}"); then
-              if printf '%s' "$RESPONSE" | jq -e '.ok == true' >/dev/null 2>&1; then
-                SUCCESS=true
-                break
+          if [ "$DELIVERY_MODE" = "apk" ]; then
+            printf -v CAPTION '%s %s собран успешно.' "$PROJECT_NAME" "$RELEASE_TAG"
+            for ATTEMPT in 1 2 3; do
+              if RESPONSE=$(curl --silent --show-error --fail-with-body -X POST "$API/sendDocument" -F "chat_id=${TELEGRAM_CHAT_ID}" -F "document=@${APK_PATH};type=application/vnd.android.package-archive" -F "caption=${CAPTION}"); then
+                if printf '%s' "$RESPONSE" | jq -e '.ok == true' >/dev/null 2>&1; then
+                  SUCCESS=true
+                  break
+                fi
               fi
-            fi
-            if [ "$ATTEMPT" -lt 3 ]; then
-              sleep $((ATTEMPT * 5))
-            fi
-          done
+              if [ "$ATTEMPT" -lt 3 ]; then
+                sleep $((ATTEMPT * 5))
+              fi
+            done
+          else
+            printf -v TEXT '%s %s собран успешно.\n\nAPK превышает лимит отправки файла или файл недоступен для загрузки ботом.\nСкачать APK:\n%s' "$PROJECT_NAME" "$RELEASE_TAG" "$APK_URL"
+            for ATTEMPT in 1 2 3; do
+              if RESPONSE=$(curl --silent --show-error --fail-with-body -X POST "$API/sendMessage" --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=${TEXT}"); then
+                if printf '%s' "$RESPONSE" | jq -e '.ok == true' >/dev/null 2>&1; then
+                  SUCCESS=true
+                  break
+                fi
+              fi
+              if [ "$ATTEMPT" -lt 3 ]; then
+                sleep $((ATTEMPT * 5))
+              fi
+            done
+          fi
 
           if [ "$SUCCESS" = "true" ]; then
-            echo "status=sent" >> "$GITHUB_OUTPUT"
+            if [ "$DELIVERY_MODE" = "apk" ]; then
+              echo "status=sent-apk" >> "$GITHUB_OUTPUT"
+            else
+              echo "status=sent-link" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "status=failed" >> "$GITHUB_OUTPUT"
             echo "::warning::GitHub Release published successfully, but Telegram notification failed after 3 attempts"
