@@ -101,7 +101,6 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
 }) {
   const translateY = useRef(new Animated.Value(0)).current;
   const neighborY = useRef(new Animated.Value(0)).current;
-  const lift = useRef(new Animated.Value(0)).current;
   const activeRef = useRef(false);
   const claimedRef = useRef(false);
   const originIndexRef = useRef(index);
@@ -217,10 +216,7 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
     const moved = from !== to;
 
     if (!moved) {
-      Animated.parallel([
-        Animated.spring(translateY, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
-        Animated.spring(lift, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
-      ]).start(() => {
+      Animated.spring(translateY, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }).start(() => {
         setIsActive(false);
         cancelRef.current();
         setTimeout(() => setBlockPress(false), 80);
@@ -229,17 +225,14 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
     }
 
     const targetTranslation = translationForTarget(from, to);
-    Animated.parallel([
-      Animated.spring(translateY, {
-        toValue: targetTranslation,
-        damping: 22,
-        stiffness: 280,
-        mass: 0.7,
-        overshootClamping: true,
-        useNativeDriver: true,
-      }),
-      Animated.spring(lift, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
-    ]).start(() => {
+    Animated.spring(translateY, {
+      toValue: targetTranslation,
+      damping: 22,
+      stiffness: 280,
+      mass: 0.7,
+      overshootClamping: true,
+      useNativeDriver: true,
+    }).start(() => {
       settlingTargetRef.current = to;
       reorderRef.current(from, to);
     });
@@ -266,7 +259,7 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
     onPanResponderRelease: finishDrag,
     onPanResponderTerminate: finishDrag,
     onPanResponderTerminationRequest: () => false,
-  }), [lift, translateY]);
+  }), [translateY]);
 
   const onLongPress = () => {
     activeRef.current = true;
@@ -279,7 +272,6 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
     setBlockPress(true);
     setIsActive(true);
     previewRef.current(index, index, Math.max(rowHeightRef.current, 1));
-    Animated.spring(lift, { toValue: 1, damping: 16, stiffness: 260, mass: 0.6, useNativeDriver: true }).start();
   };
 
   const onPressOut = () => {
@@ -288,7 +280,6 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
     }, 0);
   };
 
-  const scale = lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] });
   const combinedY = Animated.add(translateY, neighborY);
 
   return <Animated.View
@@ -298,7 +289,7 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
       rowHeightRef.current = height;
       heightChangeRef.current(height);
     }}
-    style={[styles.accountItem, { transform: [{ translateY: combinedY }, { scale }] }, isActive && styles.dragActive]}
+    style={[styles.accountItem, { transform: [{ translateY: combinedY }] }, isActive && styles.dragActive]}
   >
     {children({ onLongPress, onPressOut, isActive, blockPress })}
   </Animated.View>;
