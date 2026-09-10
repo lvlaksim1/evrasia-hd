@@ -43,7 +43,10 @@ runs:
       run: |
         set -euo pipefail
         base64 -d assets/icon.png.b64 > assets/icon.png
+        base64 -d assets/evrasia_hd_logo.jpg.b64 > assets/evrasia_hd_logo.jpg
+        base64 -d assets/evrasia_hd_glitch.mp4.b64 > assets/evrasia_hd_glitch.mp4
         test -s assets/icon.png
+        test -s assets/evrasia_hd_logo.jpg
         test -s assets/evrasia_hd_glitch.mp4
 
     - name: TypeScript check
