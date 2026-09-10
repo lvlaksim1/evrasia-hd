@@ -1,6 +1,27 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v8-START -->
+## v8 — 2026-09-10T19:30:46Z
+
+- Release commit: `2d2c91685461996ef0a5e65ed42ef1409f1b4a34`
+- Artifact: `evrasia-hd-v8.apk`
+- SHA-256: `c5f20c535c8e3a5eba0a63c4fb31cfab1e0171de083d80f9fd13e82fb9f48aa0`
+- Previous release: **v7**
+
+### Changes
+
+- v8: fix media customization and card dragging [release]
+
+### Changed files
+
+- `.github/actions/build-apk/action.yml`
+- `App.tsx`
+- `app.config.ts`
+- `assets/evrasia_hd_glitch.mp4`
+- `assets/evrasia_hd_logo.jpg`
+- `plugins/with-sms-code.js`
+<!-- AUTO-CHANGELOG-v8-END -->
 <!-- AUTO-CHANGELOG-v7-START -->
 ## v7 — 2026-09-10T18:18:50Z
 
