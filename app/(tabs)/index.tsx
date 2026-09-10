@@ -3,11 +3,10 @@ import {
   ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
   Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
-import { NativeModules } from "react-native";
+import { NativeModules, requireNativeComponent } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useVideoPlayer, VideoView } from "expo-video";
 import DraggableFlatList, { ScaleDecorator, ShadowDecorator } from "react-native-draggable-flatlist";
 import {
   commonApiLogin, downloadRestaurants, friendlyApiError, getBonusCardTypes, getCheckin,
@@ -30,6 +29,7 @@ const AppearanceMedia = NativeModules.AppearanceMedia as {
   pickLauncherIcon: () => Promise<string | null>;
   reset: (kind: "logo" | "video" | "icon") => Promise<boolean>;
 };
+const NativeStartupVideo = requireNativeComponent<{ videoUri?: string }>("StartupVideo");
 const APP_VERSION = Constants.expoConfig?.version || "1";
 const CHECKIN_WINDOW_MS = 3 * 60 * 60 * 1000;
 type SettingsSection = "root" | "restaurants" | "cardTypes" | "appearance" | "log";
@@ -86,11 +86,7 @@ function checkinCountdown(lastCheckinAt?: number, now = Date.now()) {
 function displayRestaurantKind(kind?: Restaurant["kind"]) { return kind === "alias" ? "синоним" : "адрес"; }
 
 function StartupIntro({ videoUri }: { videoUri?: string }) {
-  const source = videoUri ? { uri: videoUri } : require("../../assets/evrasia_hd_glitch.mp4");
-  const player = useVideoPlayer(source, p => {
-    p.loop = false; p.muted = true; p.play();
-  });
-  return <View style={styles.startup}><VideoView player={player} style={styles.startupVideo} nativeControls={false} contentFit="contain" /></View>;
+  return <View style={styles.startup}><NativeStartupVideo style={styles.startupVideo} videoUri={videoUri || ""} /></View>;
 }
 
 export default function HomeScreen() {
