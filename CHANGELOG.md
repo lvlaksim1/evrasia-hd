@@ -1,6 +1,22 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v12-START -->
+## v12 — 2026-09-10T22:23:02Z
+
+- Release commit: `3c8991be7d9ad02126c76a7b66363b0eea88f64e`
+- Artifact: `evrasia-hd-v12.apk`
+- SHA-256: `fd91f57b163d0b85f266972d3805236a1251e4d78e503a961b4f1510cccaed88`
+- Previous release: **v11**
+
+### Changes
+
+- v12: remove drag landing pulse [release]
+
+### Changed files
+
+- `App.tsx`
+<!-- AUTO-CHANGELOG-v12-END -->
 <!-- AUTO-CHANGELOG-v11-START -->
 ## v11 — 2026-09-10T21:57:48Z
 
