@@ -1,0 +1,140 @@
+name: Experiment trim unused native dependencies
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/experiment-trim-deps.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  trim:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      - name: Remove redundant runtime modules and switch logo picker to native module
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          package_path = Path("package.json")
+          package = json.loads(package_path.read_text(encoding="utf-8"))
+          deps = package["dependencies"]
+          removed = [
+              "@config-plugins/react-native-blob-util",
+              "expo-document-picker",
+              "expo-file-system",
+              "react-native-blob-util",
+          ]
+          for name in removed:
+              if name not in deps:
+                  raise SystemExit(f"Expected dependency not found: {name}")
+              del deps[name]
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          config_path = Path("app.config.ts")
+          config = config_path.read_text(encoding="utf-8")
+          plugin_line = '    "@config-plugins/react-native-blob-util",\n'
+          if plugin_line not in config:
+              raise SystemExit("react-native-blob-util config plugin entry not found")
+          config = config.replace(plugin_line, "", 1)
+          config_path.write_text(config, encoding="utf-8")
+
+          screen_path = Path("app/(tabs)/index.tsx")
+          screen = screen_path.read_text(encoding="utf-8")
+          for import_line in [
+              'import * as DocumentPicker from "expo-document-picker";\n',
+              'import { File, Paths } from "expo-file-system";\n',
+          ]:
+              if import_line not in screen:
+                  raise SystemExit(f"Expected import not found: {import_line.strip()}")
+              screen = screen.replace(import_line, "", 1)
+
+          choose_start = screen.index('  async function chooseAppearance(kind: "logo" | "video" | "icon") {')
+          reset_start = screen.index('  async function resetAppearance(kind: "logo" | "video") {', choose_start)
+          close_start = screen.index('\n\n  function closeSettings()', reset_start)
+
+          choose = '''  async function chooseAppearance(kind: "logo" | "video" | "icon") {
+            try {
+              if (kind === "logo") {
+                const uri = await AppearanceMedia.pickLogo();
+                if (!uri) return;
+                await AsyncStorage.removeItem("@evrasia/logoUri");
+                setAppearance(prev => ({ ...prev, logoUri: uri }));
+                appendLog("Оформление: выбран пользовательский логотип");
+                return;
+              }
+              const uri = kind === "video" ? await AppearanceMedia.pickVideo() : await AppearanceMedia.pickLauncherIcon();
+              if (!uri) return;
+              setAppearance(prev => ({ ...prev, [kind === "video" ? "videoUri" : "iconUri"]: uri }));
+              appendLog(kind === "video" ? "Оформление: выбрано пользовательское стартовое видео" : "Оформление: выбрана пользовательская иконка и создан ярлык");
+              if (kind === "icon") showMessage("Иконка выбрана", "Android не разрешает произвольно заменить системную иконку установленного приложения. Поэтому создан новый ярлык Евразия hd с выбранной картинкой. Старый ярлык можно удалить с рабочего стола.");
+            } catch (e) { appendLog(`Оформление: ошибка · ${friendlyApiError(e)}`); showMessage("Оформление", friendlyApiError(e)); }
+          }
+'''
+
+          reset = '''  async function resetAppearance(kind: "logo" | "video") {
+            if (kind === "logo") {
+              await AsyncStorage.removeItem("@evrasia/logoUri");
+              await AppearanceMedia.reset("logo");
+            } else {
+              await AppearanceMedia.reset(kind);
+            }
+            setAppearance(prev => ({ ...prev, [kind === "logo" ? "logoUri" : "videoUri"]: "" }));
+            appendLog(kind === "logo" ? "Оформление: возвращён стандартный логотип" : "Оформление: возвращено стандартное стартовое видео");
+          }'''
+
+          screen = screen[:choose_start] + choose + reset + screen[close_start:]
+          screen_path.write_text(screen, encoding="utf-8")
+          PY
+
+      - name: Regenerate lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --lockfile-only --no-frozen-lockfile
+
+      - name: Verify clean dependency installation and TypeScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsc --noEmit
+          ! grep -Fq 'from "expo-document-picker"' 'app/(tabs)/index.tsx'
+          ! grep -Fq 'from "expo-file-system"' 'app/(tabs)/index.tsx'
+          ! grep -Fq '"react-native-blob-util"' package.json
+          ! grep -Fq '"@config-plugins/react-native-blob-util"' package.json
+          git diff --check
+
+      - name: Commit experiment source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json pnpm-lock.yaml app.config.ts 'app/(tabs)/index.tsx'
+          git diff --cached --quiet && { echo "No experiment changes produced"; exit 1; }
+          git commit -m "experiment: trim unused native dependencies"
+          git push origin HEAD:main
