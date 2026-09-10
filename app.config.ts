@@ -47,7 +47,19 @@ const config: ExpoConfig = {
         resizeMode: "contain",
       },
     ],
-    ["expo-build-properties", { android: { buildArchs: ["arm64-v8a"], minSdkVersion: 24 } }],
+    [
+      "expo-build-properties",
+      {
+        android: {
+          buildArchs: ["arm64-v8a"],
+          minSdkVersion: 24,
+          enableMinifyInReleaseBuilds: true,
+          enableShrinkResourcesInReleaseBuilds: true,
+          enableBundleCompression: true,
+          useLegacyPackaging: true,
+        },
+      },
+    ],
   ],
   experiments: { typedRoutes: true, reactCompiler: true },
 };
