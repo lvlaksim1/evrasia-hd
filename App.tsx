@@ -22,11 +22,8 @@ import type { Restaurant } from "@/data/evrasia-seed";
 const SmsCode = NativeModules.SmsCode as { ensurePermission: () => Promise<boolean>; startWaiting: (checkin: string) => Promise<boolean> };
 const AppearanceMedia = NativeModules.AppearanceMedia as {
   appVersion?: string;
-  getSettings: () => Promise<{ logoUri?: string; videoUri?: string; iconUri?: string }>;
-  pickLogo: () => Promise<string | null>;
-  pickVideo: () => Promise<string | null>;
+  getSettings: () => Promise<{ iconUri?: string }>;
   pickLauncherIcon: () => Promise<string | null>;
-  reset: (kind: "logo" | "video" | "icon") => Promise<boolean>;
 };
 const APP_VERSION = AppearanceMedia?.appVersion || "v1";
 const CHECKIN_WINDOW_MS = 3 * 60 * 60 * 1000;
@@ -230,7 +227,7 @@ export default function HomeScreen() {
   const [dialog, setDialog] = useState<AppDialog>(null);
   const [clock, setClock] = useState(Date.now());
   const [bootReady, setBootReady] = useState(false);
-  const [appearance, setAppearance] = useState({ logoUri: "", videoUri: "", iconUri: "" });
+  const [appearance, setAppearance] = useState({ iconUri: "" });
   const [actionLog, setActionLog] = useState<ActionLogEntry[]>([]);
   const actionLogRef = useRef<ActionLogEntry[]>([]);
   const logWriteRef = useRef<Promise<void>>(Promise.resolve());
@@ -238,10 +235,10 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([loadAccounts(), loadRestaurants(), AppearanceMedia?.getSettings?.(), AsyncStorage.getItem("@evrasia/logoUri"), AsyncStorage.getItem(ACTION_LOG_KEY)]).then(([a, r, savedAppearance, savedLogoUri, savedLog]) => {
+    Promise.all([loadAccounts(), loadRestaurants(), AppearanceMedia?.getSettings?.(), AsyncStorage.getItem(ACTION_LOG_KEY)]).then(([a, r, savedAppearance, savedLog]) => {
       if (!alive) return;
       setAccounts(a); setRestaurants(sortRestaurants(r));
-      if (savedAppearance || savedLogoUri) setAppearance({ logoUri: savedLogoUri || savedAppearance?.logoUri || "", videoUri: savedAppearance?.videoUri || "", iconUri: savedAppearance?.iconUri || "" });
+      if (savedAppearance) setAppearance({ iconUri: savedAppearance?.iconUri || "" });
       let parsedLog: ActionLogEntry[] = [];
       try {
         const raw = savedLog ? JSON.parse(savedLog) : [];
@@ -534,33 +531,18 @@ export default function HomeScreen() {
     const next = sortRestaurants(restaurants.filter((_, i) => i !== index));
     setRestaurants(next); await saveRestaurants(next); appendLog(`Рестораны: удалена запись «${item.title}»`); setAliasSource(null); setAliasTitle("");
   }
-  async function chooseAppearance(kind: "logo" | "video" | "icon") {
-  try {
-    if (kind === "logo") {
-      const uri = await AppearanceMedia.pickLogo();
+  async function chooseLauncherIcon() {
+    try {
+      const uri = await AppearanceMedia.pickLauncherIcon();
       if (!uri) return;
-      await AsyncStorage.removeItem("@evrasia/logoUri");
-      setAppearance(prev => ({ ...prev, logoUri: uri }));
-      appendLog("Оформление: выбран пользовательский логотип");
-      return;
+      setAppearance({ iconUri: uri });
+      appendLog("Оформление: выбрана пользовательская иконка и создан ярлык");
+      showMessage("Иконка выбрана", "Android не разрешает произвольно заменить системную иконку установленного приложения. Поэтому создан новый ярлык Евразия hd с выбранной картинкой. Старый ярлык можно удалить с рабочего стола.");
+    } catch (e) {
+      appendLog(`Оформление: ошибка · ${friendlyApiError(e)}`);
+      showMessage("Оформление", friendlyApiError(e));
     }
-    const uri = kind === "video" ? await AppearanceMedia.pickVideo() : await AppearanceMedia.pickLauncherIcon();
-    if (!uri) return;
-    setAppearance(prev => ({ ...prev, [kind === "video" ? "videoUri" : "iconUri"]: uri }));
-    appendLog(kind === "video" ? "Оформление: выбрано пользовательское стартовое видео" : "Оформление: выбрана пользовательская иконка и создан ярлык");
-    if (kind === "icon") showMessage("Иконка выбрана", "Android не разрешает произвольно заменить системную иконку установленного приложения. Поэтому создан новый ярлык Евразия hd с выбранной картинкой. Старый ярлык можно удалить с рабочего стола.");
-  } catch (e) { appendLog(`Оформление: ошибка · ${friendlyApiError(e)}`); showMessage("Оформление", friendlyApiError(e)); }
-}
-  async function resetAppearance(kind: "logo" | "video") {
-  if (kind === "logo") {
-    await AsyncStorage.removeItem("@evrasia/logoUri");
-    await AppearanceMedia.reset("logo");
-  } else {
-    await AppearanceMedia.reset(kind);
   }
-  setAppearance(prev => ({ ...prev, [kind === "logo" ? "logoUri" : "videoUri"]: "" }));
-  appendLog(kind === "logo" ? "Оформление: возвращён стандартный логотип" : "Оформление: возвращено стандартное стартовое видео");
-}
 
   function closeSettings() {
     if (aliasSource) { setAliasSource(null); setAliasTitle(""); return; }
@@ -578,7 +560,7 @@ export default function HomeScreen() {
         <Pressable style={styles.squareHeaderButton} onPress={() => { setSettingsSection("root"); setSettingsVisible(true); }}>
           <View style={styles.menuLine} /><View style={styles.menuLine} /><View style={styles.menuLine} />
         </Pressable>
-        {appearance.logoUri ? <Image source={{ uri: appearance.logoUri }} style={styles.customBrandLogo} resizeMode="contain" /> : <Image source={require("./assets/evrasia_hd_logo.jpg")} style={styles.customBrandLogo} resizeMode="contain" />}
+        <Image source={require("./assets/evrasia_hd_logo.jpg")} style={styles.customBrandLogo} resizeMode="contain" />
         <Pressable style={styles.squareHeaderButton} onPress={() => void refreshAll()} disabled={refreshingAll || !accounts.length}>
           {refreshingAll ? <ActivityIndicator color="#F4C35A" /> : <Text style={[styles.headerRefresh, !accounts.length && styles.disabledText]}>↻</Text>}
         </Pressable>
@@ -660,23 +642,10 @@ export default function HomeScreen() {
         </View>}
         {settingsSection === "appearance" && <ScrollView contentContainerStyle={styles.appearanceContent}>
           <View style={styles.appearanceCard}>
-            <Text style={styles.appearanceTitle}>Логотип на главном экране</Text>
-            <Text style={styles.appearanceNote}>Выберите изображение из файлов устройства.</Text>
-            <Image source={appearance.logoUri ? { uri: appearance.logoUri } : require("./assets/evrasia_hd_logo.jpg")} style={styles.appearancePreview} resizeMode="contain" />
-            <PrimaryButton title="Выбрать логотип" onPress={() => chooseAppearance("logo")} />
-            {appearance.logoUri ? <SecondaryButton title="Вернуть стандартный" onPress={() => resetAppearance("logo")} /> : null}
-          </View>
-          <View style={styles.appearanceCard}>
-            <Text style={styles.appearanceTitle}>Стартовое видео</Text>
-            <Text style={styles.appearanceNote}>Выбранный ролик будет использоваться при следующем запуске приложения.</Text>
-            <PrimaryButton title="Выбрать видео" onPress={() => chooseAppearance("video")} />
-            {appearance.videoUri ? <SecondaryButton title="Вернуть стандартное" onPress={() => resetAppearance("video")} /> : null}
-          </View>
-          <View style={styles.appearanceCard}>
             <Text style={styles.appearanceTitle}>Иконка приложения</Text>
             <Text style={styles.appearanceNote}>Android не позволяет приложению заменить иконку в меню приложений произвольной картинкой. Будет создан ярлык на рабочем столе с выбранной иконкой.</Text>
             {appearance.iconUri ? <Image source={{ uri: appearance.iconUri }} style={styles.iconPreview} resizeMode="cover" /> : null}
-            <PrimaryButton title="Выбрать иконку и создать ярлык" onPress={() => chooseAppearance("icon")} />
+            <PrimaryButton title="Выбрать иконку и создать ярлык" onPress={chooseLauncherIcon} />
           </View>
         </ScrollView>}
         {settingsSection === "log" && <View style={styles.flex}>
