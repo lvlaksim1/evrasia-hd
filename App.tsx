@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
+  ActivityIndicator, Animated, Image, Keyboard, KeyboardAvoidingView, Modal,
   PanResponder, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { NativeModules } from "react-native";
@@ -86,12 +86,11 @@ function displayRestaurantKind(kind?: Restaurant["kind"]) { return kind === "ali
 type SortableControls = { onLongPress: () => void; onPressOut: () => void; isActive: boolean; blockPress: boolean };
 type DragPreview = { from: number; to: number; height: number } | null;
 
-function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, onHeightChange, onDragPreview, onDragCancel, onReorder, onDragEnd, children }: {
+function SortableAccountRow({ index, count, rowHeights, targetTop, onHeightChange, onDragPreview, onDragCancel, onReorder, onDragEnd, children }: {
   index: number;
   count: number;
   rowHeights: number[];
-  shiftOffset: number;
-  dragging: boolean;
+  targetTop: number;
   onHeightChange: (height: number) => void;
   onDragPreview: (from: number, to: number, height: number) => void;
   onDragCancel: () => void;
@@ -99,8 +98,7 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
   onDragEnd: () => void;
   children: (controls: SortableControls) => ReactNode;
 }) {
-  const translateY = useRef(new Animated.Value(0)).current;
-  const neighborY = useRef(new Animated.Value(0)).current;
+  const positionY = useRef(new Animated.Value(targetTop)).current;
   const activeRef = useRef(false);
   const claimedRef = useRef(false);
   const originIndexRef = useRef(index);
@@ -109,6 +107,8 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
   const rowHeightRef = useRef(140);
   const rowHeightsRef = useRef(rowHeights);
   const dragHeightsRef = useRef(rowHeights);
+  const targetTopRef = useRef(targetTop);
+  const originTopRef = useRef(targetTop);
   const settlingTargetRef = useRef<number | null>(null);
   const heightChangeRef = useRef(onHeightChange);
   const previewRef = useRef(onDragPreview);
@@ -120,6 +120,7 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
 
   countRef.current = count;
   rowHeightsRef.current = rowHeights;
+  targetTopRef.current = targetTop;
   heightChangeRef.current = onHeightChange;
   previewRef.current = onDragPreview;
   cancelRef.current = onDragCancel;
@@ -178,37 +179,30 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
   };
 
   useEffect(() => {
-    if (!dragging) return;
-    Animated.spring(neighborY, {
-      toValue: shiftOffset,
+    if (activeRef.current) return;
+    Animated.spring(positionY, {
+      toValue: targetTop,
       damping: 24,
       stiffness: 260,
       mass: 0.7,
       overshootClamping: true,
       useNativeDriver: true,
     }).start();
-  }, [dragging, neighborY, shiftOffset]);
+  }, [positionY, targetTop]);
 
   useLayoutEffect(() => {
-    if (!dragging) {
-      neighborY.stopAnimation();
-      neighborY.setValue(0);
-    }
-
     const settlingTarget = settlingTargetRef.current;
     if (settlingTarget !== null && index === settlingTarget) {
-      translateY.stopAnimation();
-      translateY.setValue(0);
       settlingTargetRef.current = null;
+      activeRef.current = false;
       setIsActive(false);
       dragEndRef.current();
       setTimeout(() => setBlockPress(false), 180);
     }
-  }, [dragging, index, neighborY, translateY]);
+  }, [index]);
 
   const finishDrag = () => {
     if (!activeRef.current) return;
-    activeRef.current = false;
     claimedRef.current = false;
 
     const from = originIndexRef.current;
@@ -216,7 +210,15 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
     const moved = from !== to;
 
     if (!moved) {
-      Animated.spring(translateY, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }).start(() => {
+      Animated.spring(positionY, {
+        toValue: targetTopRef.current,
+        damping: 18,
+        stiffness: 240,
+        mass: 0.65,
+        overshootClamping: true,
+        useNativeDriver: true,
+      }).start(() => {
+        activeRef.current = false;
         setIsActive(false);
         cancelRef.current();
         setTimeout(() => setBlockPress(false), 80);
@@ -224,9 +226,9 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
       return;
     }
 
-    const targetTranslation = translationForTarget(from, to);
-    Animated.spring(translateY, {
-      toValue: targetTranslation,
+    const targetY = originTopRef.current + translationForTarget(from, to);
+    Animated.spring(positionY, {
+      toValue: targetY,
       damping: 22,
       stiffness: 280,
       mass: 0.7,
@@ -254,12 +256,12 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
         previewRef.current(from, target, Math.max(rowHeightRef.current, 1));
       }
 
-      translateY.setValue(gesture.dy);
+      positionY.setValue(originTopRef.current + gesture.dy);
     },
     onPanResponderRelease: finishDrag,
     onPanResponderTerminate: finishDrag,
     onPanResponderTerminationRequest: () => false,
-  }), [translateY]);
+  }), [positionY]);
 
   const onLongPress = () => {
     activeRef.current = true;
@@ -268,7 +270,9 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
     hoverIndexRef.current = index;
     settlingTargetRef.current = null;
     dragHeightsRef.current = rowHeightsRef.current.slice();
-    translateY.setValue(0);
+    originTopRef.current = targetTopRef.current;
+    positionY.stopAnimation();
+    positionY.setValue(originTopRef.current);
     setBlockPress(true);
     setIsActive(true);
     previewRef.current(index, index, Math.max(rowHeightRef.current, 1));
@@ -280,8 +284,6 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
     }, 0);
   };
 
-  const combinedY = Animated.add(translateY, neighborY);
-
   return <Animated.View
     {...responder.panHandlers}
     onLayout={event => {
@@ -289,7 +291,11 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
       rowHeightRef.current = height;
       heightChangeRef.current(height);
     }}
-    style={[styles.accountItem, { transform: [{ translateY: combinedY }] }, isActive && styles.dragActive]}
+    style={[
+      styles.accountItem,
+      { position: "absolute", left: 0, right: 0, top: 0, transform: [{ translateY: positionY }] },
+      isActive && styles.dragActive,
+    ]}
   >
     {children({ onLongPress, onPressOut, isActive, blockPress })}
   </Animated.View>;
@@ -373,7 +379,19 @@ export default function HomeScreen() {
     if (bootReady) Animated.timing(mainOpacity, { toValue: 1, duration: 320, useNativeDriver: true }).start();
   }, [bootReady, mainOpacity]);
 
-  const orderedAccountHeights = useMemo(() => accounts.map(account => accountHeights[account.phone] || 140), [accounts, accountHeights]);
+  const accountGeometry = useMemo(() => {
+    let top = 0;
+    const items = accounts.map(account => {
+      const height = accountHeights[account.phone] || 140;
+      const item = { top, height };
+      top += height;
+      return item;
+    });
+    return { items, totalHeight: top };
+  }, [accounts, accountHeights]);
+  const orderedAccountHeights = useMemo(() => accountGeometry.items.map(item => item.height), [accountGeometry]);
+  const accountIndexByPhone = useMemo(() => new Map(accounts.map((account, index) => [account.phone, index])), [accounts]);
+  const renderAccounts = useMemo(() => [...accounts].sort((left, right) => left.phone.localeCompare(right.phone)), [accounts]);
 
   const filteredRestaurants = useMemo(() => {
     const q = normTitle(query);
@@ -700,71 +718,71 @@ export default function HomeScreen() {
           {refreshingAll ? <ActivityIndicator color="#F4C35A" /> : <Text style={[styles.headerRefresh, !accounts.length && styles.disabledText]}>↻</Text>}
         </Pressable>
       </View>
-      <FlatList
-        data={accounts}
-        extraData={dragPreview}
-        keyExtractor={account => account.phone}
+      <ScrollView
         style={styles.flex}
         contentContainerStyle={styles.content}
         scrollEnabled={!dragPreview}
-        removeClippedSubviews={false}
-        ListEmptyComponent={<View style={styles.emptyCard}><Text style={styles.emptyTitle}>Аккаунтов пока нет</Text><Text style={styles.muted}>Добавьте аккаунт в настройках.</Text></View>}
-        renderItem={({ item: account, index: itemIndex }) => {
-          const timer = checkinCountdown(account.lastCheckinAt, clock);
-          const shiftOffset = !dragPreview ? 0
-            : itemIndex > dragPreview.from && itemIndex <= dragPreview.to ? -dragPreview.height
-            : itemIndex < dragPreview.from && itemIndex >= dragPreview.to ? dragPreview.height
-            : 0;
-          return <SortableAccountRow
-            index={itemIndex}
-            count={accounts.length}
-            rowHeights={orderedAccountHeights}
-            shiftOffset={shiftOffset}
-            dragging={dragPreview !== null}
-            onHeightChange={height => setAccountHeights(current => Math.abs((current[account.phone] || 0) - height) < 0.5 ? current : { ...current, [account.phone]: height })}
-            onDragPreview={(from, to, height) => setDragPreview(current => current?.from === from && current.to === to && current.height === height ? current : { from, to, height })}
-            onDragCancel={() => setDragPreview(null)}
-            onReorder={(from, to) => {
-              setAccountListState(current => {
-                const next = [...current.accounts];
-                const [moved] = next.splice(from, 1);
-                next.splice(to, 0, moved);
-                void saveAccounts(next);
-                return { accounts: next, dragPreview: null };
-              });
-            }}
-            onDragEnd={() => appendLog("Аккаунты: изменён порядок карточек")}
-          >
-            {({ onLongPress, onPressOut, isActive, blockPress }) => <View style={styles.accountCard}>
-              <Pressable
-                style={styles.accountMain}
-                onPress={() => { if (!blockPress) openProfile(account); }}
-                onLongPress={onLongPress}
-                onPressOut={onPressOut}
-                delayLongPress={360}
-              >
-                <View style={styles.rowBetween}><Text style={styles.phone}>{account.phone}</Text><View style={styles.refreshSlot} /></View>
-                <View style={styles.compactStats}>
-                  <View><Text style={styles.statLabel}>Бонусы</Text><Text style={styles.bonus}>{account.bonusPoints.toLocaleString("ru-RU")}</Text></View>
-                  <View style={styles.compactMetric}><Text style={styles.statLabel}>Начисление</Text><Text style={styles.metricValue}>{account.bonusPercent}%</Text></View>
-                  <View style={styles.compactMetric}><Text style={styles.statLabel}>Покупки</Text><Text style={styles.metricValue}>{account.totalSpent.toLocaleString("ru-RU")} ₽</Text></View>
+      >
+        {!accounts.length ? <View style={styles.emptyCard}><Text style={styles.emptyTitle}>Аккаунтов пока нет</Text><Text style={styles.muted}>Добавьте аккаунт в настройках.</Text></View> : <View style={{ height: accountGeometry.totalHeight }}>
+          {renderAccounts.map(account => {
+            const itemIndex = accountIndexByPhone.get(account.phone) ?? 0;
+            const timer = checkinCountdown(account.lastCheckinAt, clock);
+            const shiftOffset = !dragPreview ? 0
+              : itemIndex > dragPreview.from && itemIndex <= dragPreview.to ? -dragPreview.height
+              : itemIndex < dragPreview.from && itemIndex >= dragPreview.to ? dragPreview.height
+              : 0;
+            const targetTop = (accountGeometry.items[itemIndex]?.top || 0) + shiftOffset;
+            return <SortableAccountRow
+              key={account.phone}
+              index={itemIndex}
+              count={accounts.length}
+              rowHeights={orderedAccountHeights}
+              targetTop={targetTop}
+              onHeightChange={height => setAccountHeights(current => Math.abs((current[account.phone] || 0) - height) < 0.5 ? current : { ...current, [account.phone]: height })}
+              onDragPreview={(from, to, height) => setDragPreview(current => current?.from === from && current.to === to && current.height === height ? current : { from, to, height })}
+              onDragCancel={() => setDragPreview(null)}
+              onReorder={(from, to) => {
+                setAccountListState(current => {
+                  const next = [...current.accounts];
+                  const [moved] = next.splice(from, 1);
+                  next.splice(to, 0, moved);
+                  void saveAccounts(next);
+                  return { accounts: next, dragPreview: null };
+                });
+              }}
+              onDragEnd={() => appendLog("Аккаунты: изменён порядок карточек")}
+            >
+              {({ onLongPress, onPressOut, isActive, blockPress }) => <View style={styles.accountCard}>
+                <Pressable
+                  style={styles.accountMain}
+                  onPress={() => { if (!blockPress) openProfile(account); }}
+                  onLongPress={onLongPress}
+                  onPressOut={onPressOut}
+                  delayLongPress={360}
+                >
+                  <View style={styles.rowBetween}><Text style={styles.phone}>{account.phone}</Text><View style={styles.refreshSlot} /></View>
+                  <View style={styles.compactStats}>
+                    <View><Text style={styles.statLabel}>Бонусы</Text><Text style={styles.bonus}>{account.bonusPoints.toLocaleString("ru-RU")}</Text></View>
+                    <View style={styles.compactMetric}><Text style={styles.statLabel}>Начисление</Text><Text style={styles.metricValue}>{account.bonusPercent}%</Text></View>
+                    <View style={styles.compactMetric}><Text style={styles.statLabel}>Покупки</Text><Text style={styles.metricValue}>{account.totalSpent.toLocaleString("ru-RU")} ₽</Text></View>
+                  </View>
+                  {account.lastCheckinCode ? <Text style={styles.checkinCode}>Последний чекин: {account.lastCheckinCode}</Text> : null}
+                  {timer ? <Text style={styles.checkinTimer}>Следующий чекин через {timer}</Text> : null}
+                  <Text style={styles.updated}>Обновлено: {account.lastUpdated || "—"}</Text>
+                </Pressable>
+                <Pressable style={[styles.refreshSlot, { position: "absolute", top: 18, right: 18, zIndex: 2 }]} onPress={() => refreshAccount(account)} disabled={busyPhone === account.phone || isActive}>
+                  {busyPhone === account.phone ? <ActivityIndicator color="#F4C35A" /> : <Text style={styles.reload}>↻</Text>}
+                </Pressable>
+                <View style={styles.cardActions}>
+                  <CardButton title="Чекин" onPress={() => { setSelectedAccount(account); setQuery(""); setRestaurantVisible(true); }} />
+                  <CardButton title="Код" onPress={() => requestWriteOff(account)} />
+                  <CardButton title="История" onPress={() => openHistory(account)} />
                 </View>
-                {account.lastCheckinCode ? <Text style={styles.checkinCode}>Последний чекин: {account.lastCheckinCode}</Text> : null}
-                {timer ? <Text style={styles.checkinTimer}>Следующий чекин через {timer}</Text> : null}
-                <Text style={styles.updated}>Обновлено: {account.lastUpdated || "—"}</Text>
-              </Pressable>
-              <Pressable style={[styles.refreshSlot, { position: "absolute", top: 18, right: 18, zIndex: 2 }]} onPress={() => refreshAccount(account)} disabled={busyPhone === account.phone || isActive}>
-                {busyPhone === account.phone ? <ActivityIndicator color="#F4C35A" /> : <Text style={styles.reload}>↻</Text>}
-              </Pressable>
-              <View style={styles.cardActions}>
-                <CardButton title="Чекин" onPress={() => { setSelectedAccount(account); setQuery(""); setRestaurantVisible(true); }} />
-                <CardButton title="Код" onPress={() => requestWriteOff(account)} />
-                <CardButton title="История" onPress={() => openHistory(account)} />
-              </View>
-            </View>}
-          </SortableAccountRow>;
-        }}
-      />
+              </View>}
+            </SortableAccountRow>;
+          })}
+        </View>}
+      </ScrollView>
 
       <Modal visible={settingsVisible} animationType="slide" onRequestClose={closeSettings}><SafeAreaView style={styles.safe}>
         <ScreenHeader title={settingsSection === "root" ? "Настройки" : settingsSection === "restaurants" ? "Рестораны" : settingsSection === "appearance" ? "Оформление" : settingsSection === "log" ? "Журнал действий" : "Типы карт"} onClose={closeSettings} back={settingsSection !== "root"} />
