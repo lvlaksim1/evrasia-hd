@@ -35,7 +35,6 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-secure-store",
-    "./plugins/with-sms-code",
     [
       "expo-splash-screen",
       {
@@ -58,6 +57,7 @@ const config: ExpoConfig = {
         },
       },
     ],
+    "./plugins/with-sms-code",
   ],
   experiments: { reactCompiler: true },
 };
