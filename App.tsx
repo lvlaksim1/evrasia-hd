@@ -152,10 +152,8 @@ function SortableAccountRow({ index, count, onReorder, onDragEnd, children }: {
       if (target !== current) {
         movedRef.current = true;
         LayoutAnimation.configureNext({
-          duration: 150,
+          duration: 240,
           update: { type: LayoutAnimation.Types.easeInEaseOut },
-          create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-          delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
         });
         reorderRef.current(current, target);
         indexRef.current = target;
@@ -578,7 +576,7 @@ export default function HomeScreen() {
         <Pressable style={styles.squareHeaderButton} onPress={() => { setSettingsSection("root"); setSettingsVisible(true); }}>
           <View style={styles.menuLine} /><View style={styles.menuLine} /><View style={styles.menuLine} />
         </Pressable>
-        {appearance.logoUri ? <Image source={{ uri: appearance.logoUri }} style={styles.customBrandLogo} resizeMode="contain" /> : <Image source={require("./assets/evrasia_hd_logo.jpg")} style={styles.customBrandLogo} resizeMode="contain" />}
+        {appearance.logoUri ? <Image source={{ uri: appearance.logoUri }} style={styles.customBrandLogo} resizeMode="contain" /> : <Image source={require("./assets/evrasia_hd_logo.png")} style={styles.customBrandLogo} resizeMode="contain" />}
         <Pressable style={styles.squareHeaderButton} onPress={() => void refreshAll()} disabled={refreshingAll || !accounts.length}>
           {refreshingAll ? <ActivityIndicator color="#F4C35A" /> : <Text style={[styles.headerRefresh, !accounts.length && styles.disabledText]}>↻</Text>}
         </Pressable>
@@ -662,7 +660,7 @@ export default function HomeScreen() {
           <View style={styles.appearanceCard}>
             <Text style={styles.appearanceTitle}>Логотип на главном экране</Text>
             <Text style={styles.appearanceNote}>Выберите изображение из файлов устройства.</Text>
-            <Image source={appearance.logoUri ? { uri: appearance.logoUri } : require("./assets/evrasia_hd_logo.jpg")} style={styles.appearancePreview} resizeMode="contain" />
+            <Image source={appearance.logoUri ? { uri: appearance.logoUri } : require("./assets/evrasia_hd_logo.png")} style={styles.appearancePreview} resizeMode="contain" />
             <PrimaryButton title="Выбрать логотип" onPress={() => chooseAppearance("logo")} />
             {appearance.logoUri ? <SecondaryButton title="Вернуть стандартный" onPress={() => resetAppearance("logo")} /> : null}
           </View>
@@ -817,7 +815,7 @@ const styles = StyleSheet.create({
   logTime: { color: "#71857A", fontSize: 12, marginBottom: 4 },
   logMessage: { color: "#E8EFEA", fontSize: 14, lineHeight: 20 },
   customBrandLogo: { width: 230, height: 76 },
-  content: { paddingHorizontal: 14, paddingBottom: 21 }, accountItem: { paddingBottom: 9 }, dragActive: { zIndex: 30, elevation: 16, opacity: 0.99 }, emptyCard: { backgroundColor: "#102019", borderRadius: 18, borderWidth: 1, borderColor: "#294536", padding: 17 },
+  content: { paddingHorizontal: 14, paddingBottom: 21 }, accountItem: { paddingBottom: 9 }, dragActive: { zIndex: 30, elevation: 16 }, emptyCard: { backgroundColor: "#102019", borderRadius: 18, borderWidth: 1, borderColor: "#294536", padding: 17 },
   emptyTitle: { color: "#F5F7F5", fontSize: 18, fontWeight: "900" }, muted: { color: "#81958A", fontSize: 12, marginTop: 4 },
   accountCard: { backgroundColor: "#102019", borderRadius: 19, borderWidth: 1, borderColor: "#2C503C", overflow: "hidden" }, accountMain: { paddingHorizontal: 13, paddingVertical: 11 },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, phone: { color: "#F5F7F5", fontSize: 15, fontWeight: "900" }, reload: { color: "#E6B44B", fontSize: 21 },
