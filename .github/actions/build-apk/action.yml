@@ -44,9 +44,9 @@ runs:
         set -euo pipefail
         base64 -d assets/icon.png.b64 > assets/icon.png
         test -s assets/icon.png
-        test -s assets/evrasia_hd_logo.jpg
+        test -s assets/evrasia_hd_logo.png
         test -s assets/evrasia_hd_glitch.mp4
-        echo "3e36acc4b7ba2cec07ca3e18fa59b3fab582a0522ef1cbe0e0f8fe803f52b53c  assets/evrasia_hd_logo.jpg" | sha256sum -c -
+        echo "935a52492868d083469f52e13e99219d23db6287479dd4931eb64b6ad96845b3  assets/evrasia_hd_logo.png" | sha256sum -c -
         echo "ed6f44dc7e7c384aa70e97ca46bfc75963dbd18f145b25082e435b9b71cd85b4  assets/evrasia_hd_glitch.mp4" | sha256sum -c -
 
     - name: TypeScript check
