@@ -1,26 +1,24 @@
 {
   "schemaVersion": 1,
-  "releaseNumber": 8,
-  "tag": "v8",
-  "versionCode": 8,
-  "versionName": "v8",
+  "releaseNumber": 9,
+  "tag": "v9",
+  "versionCode": 9,
+  "versionName": "v9",
   "packageId": "com.evrasia.hd",
-  "commit": "2d2c91685461996ef0a5e65ed42ef1409f1b4a34",
-  "artifact": "evrasia-hd-v8.apk",
-  "sha256": "c5f20c535c8e3a5eba0a63c4fb31cfab1e0171de083d80f9fd13e82fb9f48aa0",
-  "publishedAt": "2026-09-10T19:30:46Z",
-  "previousRelease": "v7",
-  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v8",
-  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v8/evrasia-hd-v8.apk",
+  "commit": "aa013648d8a1115fe4917a2a0e41b559654e4acf",
+  "artifact": "evrasia-hd-v9.apk",
+  "sha256": "1c7d5b701cdf3c8ec230f910dc6d48f56f3bb1f13397f6b6dafead06d0e159df",
+  "publishedAt": "2026-09-10T20:12:12Z",
+  "previousRelease": "v8",
+  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v9",
+  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v9/evrasia-hd-v9.apk",
   "commits": [
-    "v8: fix media customization and card dragging [release]"
+    "v9: restore transparent logo and smooth card reorder [release]"
   ],
   "changedFiles": [
     ".github/actions/build-apk/action.yml",
     "App.tsx",
-    "app.config.ts",
-    "assets/evrasia_hd_glitch.mp4",
     "assets/evrasia_hd_logo.jpg",
-    "plugins/with-sms-code.js"
+    "assets/evrasia_hd_logo.png"
   ]
 }

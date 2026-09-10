@@ -1,6 +1,25 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v9-START -->
+## v9 — 2026-09-10T20:12:12Z
+
+- Release commit: `aa013648d8a1115fe4917a2a0e41b559654e4acf`
+- Artifact: `evrasia-hd-v9.apk`
+- SHA-256: `1c7d5b701cdf3c8ec230f910dc6d48f56f3bb1f13397f6b6dafead06d0e159df`
+- Previous release: **v8**
+
+### Changes
+
+- v9: restore transparent logo and smooth card reorder [release]
+
+### Changed files
+
+- `.github/actions/build-apk/action.yml`
+- `App.tsx`
+- `assets/evrasia_hd_logo.jpg`
+- `assets/evrasia_hd_logo.png`
+<!-- AUTO-CHANGELOG-v9-END -->
 <!-- AUTO-CHANGELOG-v8-START -->
 ## v8 — 2026-09-10T19:30:46Z
 
