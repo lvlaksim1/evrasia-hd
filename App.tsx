@@ -296,8 +296,21 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
 }
 
 export default function HomeScreen() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [dragPreview, setDragPreview] = useState<DragPreview>(null);
+  const [accountListState, setAccountListState] = useState<{ accounts: Account[]; dragPreview: DragPreview }>({ accounts: [], dragPreview: null });
+  const accounts = accountListState.accounts;
+  const dragPreview = accountListState.dragPreview;
+  const setAccounts = (nextAccounts: Account[] | ((current: Account[]) => Account[])) => {
+    setAccountListState(current => ({
+      ...current,
+      accounts: typeof nextAccounts === "function" ? nextAccounts(current.accounts) : nextAccounts,
+    }));
+  };
+  const setDragPreview = (nextPreview: DragPreview | ((current: DragPreview) => DragPreview)) => {
+    setAccountListState(current => ({
+      ...current,
+      dragPreview: typeof nextPreview === "function" ? nextPreview(current.dragPreview) : nextPreview,
+    }));
+  };
   const [accountHeights, setAccountHeights] = useState<Record<string, number>>({});
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [busyPhone, setBusyPhone] = useState("");
@@ -712,14 +725,13 @@ export default function HomeScreen() {
             onDragPreview={(from, to, height) => setDragPreview(current => current?.from === from && current.to === to && current.height === height ? current : { from, to, height })}
             onDragCancel={() => setDragPreview(null)}
             onReorder={(from, to) => {
-              setAccounts(currentAccounts => {
-                const next = [...currentAccounts];
+              setAccountListState(current => {
+                const next = [...current.accounts];
                 const [moved] = next.splice(from, 1);
                 next.splice(to, 0, moved);
                 void saveAccounts(next);
-                return next;
+                return { accounts: next, dragPreview: null };
               });
-              setDragPreview(null);
             }}
             onDragEnd={() => appendLog("Аккаунты: изменён порядок карточек")}
           >
