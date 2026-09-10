@@ -245,7 +245,8 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
 }
 
 export default function HomeScreen() {
-  const [accounts, setAccounts] = useState<Account[]>([]);\n  const [dragPreview, setDragPreview] = useState<DragPreview>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [dragPreview, setDragPreview] = useState<DragPreview>(null);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [busyPhone, setBusyPhone] = useState("");
   const [refreshingAll, setRefreshingAll] = useState(false);
