@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
-  PanResponder, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View,
+  PanResponder, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { NativeModules, requireNativeComponent } from "react-native";
 import type { ViewProps } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   commonApiLogin, downloadRestaurants, friendlyApiError, getBonusCardTypes, getCheckin,
@@ -23,6 +22,7 @@ import type { Restaurant } from "@/data/evrasia-seed";
 
 const SmsCode = NativeModules.SmsCode as { ensurePermission: () => Promise<boolean>; startWaiting: (checkin: string) => Promise<boolean> };
 const AppearanceMedia = NativeModules.AppearanceMedia as {
+  appVersion?: string;
   getSettings: () => Promise<{ logoUri?: string; videoUri?: string; iconUri?: string }>;
   pickLogo: () => Promise<string | null>;
   pickVideo: () => Promise<string | null>;
@@ -31,7 +31,7 @@ const AppearanceMedia = NativeModules.AppearanceMedia as {
 };
 type StartupVideoProps = ViewProps & { videoUri?: string };
 const NativeStartupVideo = requireNativeComponent<StartupVideoProps>("StartupVideo");
-const APP_VERSION = Constants.expoConfig?.version || "1";
+const APP_VERSION = AppearanceMedia?.appVersion || "v1";
 const CHECKIN_WINDOW_MS = 3 * 60 * 60 * 1000;
 type SettingsSection = "root" | "restaurants" | "cardTypes" | "appearance" | "log";
 type DialogAction = { label: string; kind?: "primary" | "secondary" | "danger"; onPress?: () => void | Promise<void> };
@@ -524,9 +524,10 @@ export default function HomeScreen() {
     setSettingsVisible(false);
   }
 
-  if (!(bootReady && introDone)) return <StartupIntro videoUri={appearance.videoUri} />;
+  if (!(bootReady && introDone)) return <><StatusBar barStyle="light-content" /><StartupIntro videoUri={appearance.videoUri} /></>;
 
   return <View style={styles.safe}>
+    <StatusBar barStyle="light-content" />
     <Animated.View style={[styles.flex, { opacity: mainOpacity }] }>
       <SafeAreaView style={styles.safe}>
       <View style={styles.mainHeader}>

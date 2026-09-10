@@ -56,7 +56,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        echo "SOURCE_SCREEN_HASH=$(sha256sum 'app/(tabs)/index.tsx' | cut -d' ' -f1)" >> "$GITHUB_ENV"
+        echo "SOURCE_SCREEN_HASH=$(sha256sum 'App.tsx' | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
     - name: Expo prebuild
       env:
@@ -73,7 +73,7 @@ runs:
         grep -Eq '^newArchEnabled=true$' android/gradle.properties
         grep -Eq '^reactNativeArchitectures=arm64-v8a$' android/gradle.properties
         grep -Fq 'android:windowSoftInputMode="adjustResize"' android/app/src/main/AndroidManifest.xml
-        ACTUAL=$(sha256sum 'app/(tabs)/index.tsx' | cut -d' ' -f1)
+        ACTUAL=$(sha256sum 'App.tsx' | cut -d' ' -f1)
         test "$SOURCE_SCREEN_HASH" = "$ACTUAL" || { echo 'prebuild changed source index.tsx' >&2; exit 1; }
 
     - name: TypeScript check after prebuild
