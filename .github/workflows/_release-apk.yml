@@ -1,0 +1,419 @@
+name: L2 Universal APK Release
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "release or validate"
+        required: false
+        default: "release"
+        type: string
+      project_name:
+        description: "Human-readable project name; required for release"
+        required: false
+        default: ""
+        type: string
+      expected_package_id:
+        required: true
+        type: string
+      expected_cert_sha256:
+        required: true
+        type: string
+    secrets:
+      ANDROID_KEYSTORE:
+        required: true
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
+    outputs:
+      release_number:
+        description: "Published APK release number"
+        value: ${{ jobs.build-sign-verify.outputs.effective_release_number }}
+      apk_filename:
+        description: "Published APK file name"
+        value: ${{ jobs.build-sign-verify.outputs.apk_filename }}
+
+jobs:
+  prepare-release:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_release-core.yml
+    with:
+      mode: prepare
+
+  build-sign-verify:
+    if: ${{ inputs.mode == 'validate' || needs.prepare-release.outputs.release_requested == 'true' }}
+    needs: prepare-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    outputs:
+      effective_release_number: ${{ steps.metadata.outputs.release_number }}
+      apk_filename: ${{ steps.metadata.outputs.apk_filename }}
+    steps:
+      - name: Define APK metadata
+        id: metadata
+        env:
+          MODE: ${{ inputs.mode }}
+          RELEASE_REQUESTED: ${{ needs.prepare-release.outputs.release_requested }}
+          PREPARED_RELEASE_NUMBER: ${{ needs.prepare-release.outputs.release_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$MODE" in
+            release)
+              test "$RELEASE_REQUESTED" = "true"
+              [[ "$PREPARED_RELEASE_NUMBER" =~ ^[0-9]+$ ]]
+              RELEASE_NUMBER="$PREPARED_RELEASE_NUMBER"
+              ;;
+            validate)
+              RELEASE_NUMBER=9999
+              ;;
+            *)
+              echo "Unsupported APK workflow mode: $MODE"
+              exit 1
+              ;;
+          esac
+
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          echo "release_number=$RELEASE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "apk_filename=${REPO_NAME}-v${RELEASE_NUMBER}.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact source commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+
+      - name: Install universal APK tools
+        shell: bash
+        run: sdkmanager --install "build-tools;35.0.0"
+
+      - name: Build project APK candidate
+        id: project-build
+        uses: ./.github/actions/build-apk
+        with:
+          release_number: ${{ steps.metadata.outputs.release_number }}
+
+      - name: Validate unsigned APK candidate
+        env:
+          CANDIDATE_APK: ${{ steps.project-build.outputs.apk_path }}
+          RELEASE_NUMBER: ${{ steps.metadata.outputs.release_number }}
+          EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -n "$CANDIDATE_APK"
+          test -s "$CANDIDATE_APK"
+
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -x "$APKSIGNER"
+          test -x "$AAPT"
+
+          BADGING=$("$AAPT" dump badging "$CANDIDATE_APK")
+          printf '%s\n' "$BADGING" | grep -F "package: name='${EXPECTED_PACKAGE_ID}'"
+          printf '%s\n' "$BADGING" | grep -F "versionCode='${RELEASE_NUMBER}'"
+          printf '%s\n' "$BADGING" | grep -F "versionName='v${RELEASE_NUMBER}'"
+
+          if "$APKSIGNER" verify "$CANDIDATE_APK" >/dev/null 2>&1; then
+            echo "L3 build adapter returned an already-signed APK; unsigned candidate required"
+            exit 1
+          fi
+
+      - name: Verify APK native architecture
+        env:
+          CANDIDATE_APK: ${{ steps.project-build.outputs.apk_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t ABIS < <(unzip -Z1 "$CANDIDATE_APK" | awk -F/ '$1 == "lib" && NF >= 3 {print $2}' | sort -u)
+
+          if [ "${#ABIS[@]}" -eq 0 ]; then
+            echo "APK contains no native libraries; architecture-independent APK accepted"
+            exit 0
+          fi
+
+          printf 'Native ABIs: %s\n' "${ABIS[*]}"
+
+          if ! printf '%s\n' "${ABIS[@]}" | grep -Fxq 'arm64-v8a'; then
+            echo "APK does not contain required arm64-v8a native libraries"
+            exit 1
+          fi
+
+          if printf '%s\n' "${ABIS[@]}" | grep -Fvxq 'arm64-v8a'; then
+            echo "APK contains native ABI other than arm64-v8a"
+            exit 1
+          fi
+
+      - name: Sign and verify APK
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          RELEASE_APK_FILENAME: ${{ steps.metadata.outputs.apk_filename }}
+          CANDIDATE_APK: ${{ steps.project-build.outputs.apk_path }}
+          EXPECTED_CERT_SHA256: ${{ inputs.expected_cert_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${ANDROID_KEYSTORE:-}" ]; then
+            echo "ANDROID_KEYSTORE is not configured"
+            exit 1
+          fi
+
+          SIGN_DIR="$RUNNER_TEMP/android-signing"
+          SIGN_ZIP="$RUNNER_TEMP/android-signing.zip"
+          trap 'rm -rf "$SIGN_DIR" "$SIGN_ZIP"' EXIT
+
+          mkdir -p "$SIGN_DIR"
+          printf '%s' "$ANDROID_KEYSTORE" | base64 --decode > "$SIGN_ZIP"
+          unzip -q "$SIGN_ZIP" -d "$SIGN_DIR"
+          test -s "$SIGN_DIR/key.pk8"
+          test -s "$SIGN_DIR/cert.pem"
+          chmod 600 "$SIGN_DIR/key.pk8"
+
+          CERT_SHA256=$(openssl x509 -in "$SIGN_DIR/cert.pem" -outform DER | sha256sum | awk '{print $1}')
+          if [ "$CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "Unexpected Android signing certificate"
+            exit 1
+          fi
+
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$APKSIGNER"
+
+          "$APKSIGNER" sign --key "$SIGN_DIR/key.pk8" --cert "$SIGN_DIR/cert.pem" --out "$RELEASE_APK_FILENAME" "$CANDIDATE_APK"
+          "$APKSIGNER" verify --verbose --print-certs "$RELEASE_APK_FILENAME"
+
+      - name: Write APK verification summary
+        env:
+          MODE: ${{ inputs.mode }}
+          RELEASE_NUMBER: ${{ steps.metadata.outputs.release_number }}
+          RELEASE_APK_FILENAME: ${{ steps.metadata.outputs.apk_filename }}
+          CANDIDATE_APK: ${{ steps.project-build.outputs.apk_path }}
+          EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
+          EXPECTED_CERT_SHA256: ${{ inputs.expected_cert_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ABIS=$(unzip -Z1 "$CANDIDATE_APK" | awk -F/ '$1 == "lib" && NF >= 3 {print $2}' | sort -u | paste -sd ',' -)
+          if [ -z "$ABIS" ]; then
+            ABIS="architecture-independent"
+          fi
+          APK_SHA256=$(sha256sum "$RELEASE_APK_FILENAME" | awk '{print $1}')
+
+          {
+            echo "## APK verification"
+            echo
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Mode | `$MODE` |"
+            echo "| Commit | `$GITHUB_SHA` |"
+            echo "| Package | `$EXPECTED_PACKAGE_ID` |"
+            echo "| versionCode | `$RELEASE_NUMBER` |"
+            echo "| versionName | `v$RELEASE_NUMBER` |"
+            echo "| Native ABI | `$ABIS` |"
+            echo "| Signing certificate SHA-256 | `$EXPECTED_CERT_SHA256` |"
+            echo "| Signed APK | `$RELEASE_APK_FILENAME` |"
+            echo "| Signed APK SHA-256 | `$APK_SHA256` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release APK artifact
+        if: ${{ inputs.mode == 'release' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifact
+          path: ${{ steps.metadata.outputs.apk_filename }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload validation APK artifact
+        if: ${{ inputs.mode == 'validate' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: work-branch-signed-apk
+          path: ${{ steps.metadata.outputs.apk_filename }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    if: ${{ inputs.mode == 'release' }}
+    needs: build-sign-verify
+    permissions:
+      contents: write
+      actions: write
+    uses: ./.github/workflows/_release-core.yml
+    with:
+      mode: publish
+      project_name: ${{ inputs.project_name }}
+      release_number: ${{ needs.build-sign-verify.outputs.effective_release_number }}
+      artifact_filename: ${{ needs.build-sign-verify.outputs.apk_filename }}
+
+  retain-apk-history:
+    if: ${{ inputs.mode == 'release' }}
+    needs:
+      - build-sign-verify
+      - publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Keep only current and previous APK binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_NUMBER: ${{ needs.build-sign-verify.outputs.effective_release_number }}
+        shell: bash
+        run: |
+          set +e
+          CURRENT_TAG="v${CURRENT_NUMBER}"
+
+          ASSET_ROWS=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | .tag_name as $tag | select($tag | test("^v[0-9]+$")) | .assets[]? | select((.name | endswith(".apk")) or (.name | endswith(".apk.sha256"))) | [$tag, (.id | tostring), .name] | @tsv')
+          if [ $? -ne 0 ]; then
+            echo "::warning::Could not list release assets for APK retention cleanup"
+            exit 0
+          fi
+
+          PREVIOUS_NUMBER=$(printf '%s\n' "$ASSET_ROWS" | awk -F '\t' -v current="$CURRENT_NUMBER" '$3 ~ /\.apk$/ {n=substr($1,2)+0; if (n < current+0) print n}' | sort -n | tail -1)
+          PREVIOUS_TAG=""
+          if [ -n "$PREVIOUS_NUMBER" ]; then
+            PREVIOUS_TAG="v${PREVIOUS_NUMBER}"
+          fi
+
+          CLEANUP_FAILED=false
+          while IFS=$'\t' read -r TAG ASSET_ID ASSET_NAME; do
+            [ -z "$ASSET_ID" ] && continue
+
+            DELETE_ASSET=false
+            case "$ASSET_NAME" in
+              *.apk.sha256)
+                DELETE_ASSET=true
+                ;;
+              *.apk)
+                if [ "$TAG" != "$CURRENT_TAG" ] && { [ -z "$PREVIOUS_TAG" ] || [ "$TAG" != "$PREVIOUS_TAG" ]; }; then
+                  DELETE_ASSET=true
+                fi
+                ;;
+            esac
+
+            if [ "$DELETE_ASSET" = "true" ]; then
+              if ! gh api --method DELETE "/repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" >/dev/null; then
+                CLEANUP_FAILED=true
+              fi
+            fi
+          done <<< "$ASSET_ROWS"
+
+          if [ "$CLEANUP_FAILED" = "true" ]; then
+            echo "::warning::Release succeeded, but some old APK assets could not be deleted"
+          fi
+          exit 0
+
+  telegram:
+    if: ${{ inputs.mode == 'release' }}
+    outputs:
+      notification_status: ${{ steps.notify.outputs.status }}
+    needs:
+      - build-sign-verify
+      - publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Send APK link to Telegram
+        id: notify
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PROJECT_NAME: ${{ inputs.project_name }}
+          RELEASE_NUMBER: ${{ needs.build-sign-verify.outputs.effective_release_number }}
+          RELEASE_APK_FILENAME: ${{ needs.build-sign-verify.outputs.apk_filename }}
+        shell: bash
+        run: |
+          set -u
+
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "status=not-configured" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub Release published, but Telegram secrets are not configured"
+            exit 0
+          fi
+
+          API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
+          RELEASE_TAG="v${RELEASE_NUMBER}"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${RELEASE_APK_FILENAME}"
+          printf -v TEXT '%s %s собран успешно.\n\nСкачать APK:\n%s' "$PROJECT_NAME" "$RELEASE_TAG" "$APK_URL"
+
+          SUCCESS=false
+          for ATTEMPT in 1 2 3; do
+            if RESPONSE=$(curl --silent --show-error --fail-with-body -X POST "$API/sendMessage" --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=${TEXT}"); then
+              if printf '%s' "$RESPONSE" | jq -e '.ok == true' >/dev/null 2>&1; then
+                SUCCESS=true
+                break
+              fi
+            fi
+            if [ "$ATTEMPT" -lt 3 ]; then
+              sleep $((ATTEMPT * 5))
+            fi
+          done
+
+          if [ "$SUCCESS" = "true" ]; then
+            echo "status=sent" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub Release published successfully, but Telegram notification failed after 3 attempts"
+          fi
+
+  release-summary:
+    if: ${{ always() && inputs.mode == 'release' && needs.build-sign-verify.result != 'skipped' }}
+    needs:
+      - build-sign-verify
+      - publish
+      - retain-apk-history
+      - telegram
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Write APK release run summary
+        env:
+          RELEASE_NUMBER: ${{ needs.build-sign-verify.outputs.effective_release_number }}
+          APK_FILENAME: ${{ needs.build-sign-verify.outputs.apk_filename }}
+          BUILD_RESULT: ${{ needs.build-sign-verify.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          RETENTION_RESULT: ${{ needs.retain-apk-history.result }}
+          TELEGRAM_JOB_RESULT: ${{ needs.telegram.result }}
+          TELEGRAM_STATUS: ${{ needs.telegram.outputs.notification_status }}
+        shell: bash
+        run: |
+          RELEASE_TAG="v${RELEASE_NUMBER}"
+          RELEASE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
+          APK_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$APK_FILENAME"
+
+          {
+            echo "## APK release pipeline"
+            echo
+            echo "| Stage | Result |"
+            echo "|---|---|"
+            echo "| Build / verify / sign | `$BUILD_RESULT` |"
+            echo "| GitHub Release | `$PUBLISH_RESULT` |"
+            echo "| APK retention | `$RETENTION_RESULT` |"
+            echo "| Telegram job | `$TELEGRAM_JOB_RESULT` |"
+            echo "| Telegram delivery | `${TELEGRAM_STATUS:-unknown}` |"
+            echo
+            echo "**Release:** [$RELEASE_TAG]($RELEASE_URL)"
+            echo
+            echo "**APK:** [$APK_FILENAME]($APK_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"

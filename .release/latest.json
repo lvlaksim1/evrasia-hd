@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "releaseNumber": 1,
+  "tag": "v1",
+  "versionCode": 100004,
+  "versionName": "1",
+  "packageId": "com.evrasia.hd",
+  "commit": "2b27b70d7b337254ea7d2e93fe2647a5a2184407",
+  "artifact": "evrasia-hd-v1-arm64.apk",
+  "sha256": "efa17550ad737ac10f9b77042994985e941736f80e4f3c51a7bf443f6ad0fa6b",
+  "publishedAt": "2026-09-09T17:52:10Z",
+  "previousRelease": null,
+  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v1",
+  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v1/evrasia-hd-v1-arm64.apk",
+  "commits": [
+    "chore: initialize clean repository",
+    "release: v1 initial clean copy of Evrasia HD v45 [release]",
+    "ci: handle first release with empty tag history [release]",
+    "ci: fix first-release version detection [release]",
+    "ci: rebuild clean release workflow [release]"
+  ],
+  "changedFiles": [
+    ".github/workflows/android-apk.yml"
+  ]
+}

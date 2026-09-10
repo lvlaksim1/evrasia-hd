@@ -1,7 +1,10 @@
 import type { ExpoConfig } from "expo/config";
 
-const buildNumber = Number(process.env.GITHUB_RUN_NUMBER || "1000");
-const releaseVersion = process.env.EVRASIA_HD_VERSION || "1";
+const releaseVersionCode = Number(process.env.RELEASE_VERSION_CODE || "1");
+if (!Number.isInteger(releaseVersionCode) || releaseVersionCode < 1) {
+  throw new Error("RELEASE_VERSION_CODE must be a positive integer");
+}
+const releaseVersion = `v${releaseVersionCode}`;
 const config: ExpoConfig = {
   name: "Евразия hd",
   slug: "evrasia-hd",
@@ -22,7 +25,7 @@ const config: ExpoConfig = {
     softwareKeyboardLayoutMode: "resize",
     predictiveBackGestureEnabled: false,
     package: "com.evrasia.hd",
-    versionCode: Number(releaseVersion) * 100000 + buildNumber,
+    versionCode: releaseVersionCode,
     icon: "./assets/icon.png",
     adaptiveIcon: {
       foregroundImage: "./assets/icon.png",

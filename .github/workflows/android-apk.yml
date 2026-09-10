@@ -3,137 +3,121 @@ name: Build Android APK
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: apk-release
+  queue: max
+
 jobs:
-  build:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+  release-apk:
+    uses: ./.github/workflows/_release-apk.yml
+    with:
+      project_name: Евразия HD
+      expected_package_id: com.evrasia.hd
+      expected_cert_sha256: ${{ vars.ANDROID_CERT_SHA256 }}
+    secrets:
+      ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
+  update-release-docs:
+    if: ${{ contains(github.event.head_commit.message, '[release]') }}
+    needs: release-apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout current main with release history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           fetch-depth: 0
+          persist-credentials: true # intentional: this job commits generated release documentation
 
-      - name: Determine next release version
-        id: version
+      - name: Read published release metadata
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NUMBER: ${{ needs.release-apk.outputs.release_number }}
+          APK_FILENAME: ${{ needs.release-apk.outputs.apk_filename }}
         shell: bash
         run: |
+          set -euo pipefail
+          [[ "$RELEASE_NUMBER" =~ ^[0-9]+$ ]]
+          test -n "$APK_FILENAME"
+
+          RELEASE_TAG="v${RELEASE_NUMBER}"
+          RELEASE_JSON=$(gh api "/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          TARGET_COMMIT=$(printf '%s' "$RELEASE_JSON" | jq -r '.target_commitish // empty')
+          PUBLISHED_AT=$(printf '%s' "$RELEASE_JSON" | jq -r '.published_at // empty')
+          test "$TARGET_COMMIT" = "$GITHUB_SHA"
+
+          DIGEST=$(printf '%s' "$RELEASE_JSON" | jq -r --arg name "$APK_FILENAME" '.assets[]? | select(.name == $name) | .digest // empty' | head -1)
+          if [[ "$DIGEST" == sha256:* ]]; then
+            SHA256="${DIGEST#sha256:}"
+          else
+            VERIFY_DIR="$RUNNER_TEMP/release-docs-verify"
+            rm -rf "$VERIFY_DIR"
+            mkdir -p "$VERIFY_DIR"
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK_FILENAME" --dir "$VERIFY_DIR"
+            SHA256=$(sha256sum "$VERIFY_DIR/$APK_FILENAME" | awk '{print $1}')
+          fi
+          [[ "$SHA256" =~ ^[0-9a-fA-F]{64}$ ]]
+
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "apk_filename=$APK_FILENAME" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "published_at=$PUBLISHED_AT" >> "$GITHUB_OUTPUT"
+
+      - name: Regenerate release documentation
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_NUMBER: ${{ needs.release-apk.outputs.release_number }}
+          APK_FILENAME: ${{ steps.release.outputs.apk_filename }}
+          APK_SHA256: ${{ steps.release.outputs.sha256 }}
+          PUBLISHED_AT: ${{ steps.release.outputs.published_at }}
+        shell: bash
+        run: |
+          set -euo pipefail
           git fetch --tags --force
-          LAST=$(git tag -l 'v[0-9]*' | sed -n 's/^v\([0-9][0-9]*\)$/\1/p' | sort -n | tail -1)
-          if [ -z "$LAST" ]; then LAST=0; fi
-          NEXT=$((LAST + 1))
-          echo "number=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
-          echo "EVRASIA_HD_VERSION=$NEXT" >> "$GITHUB_ENV"
+          python3 .github/scripts/update-release-docs.py --release-tag "$RELEASE_TAG" --release-commit "$GITHUB_SHA" --artifact-filename "$APK_FILENAME" --sha256 "$APK_SHA256" --published-at "$PUBLISHED_AT" --package-id "com.evrasia.hd" --version-code "$RELEASE_NUMBER" --version-name "$RELEASE_TAG"
+          git diff --check
+          grep -F "Версия: **$RELEASE_TAG**" README.md
+          grep -F "Актуально для релиза: **$RELEASE_TAG**" ARCHITECTURE.md
+          grep -F "Релиз: **$RELEASE_TAG**" RELEASE.md
+          grep -F "## $RELEASE_TAG —" CHANGELOG.md
+          jq -e --arg tag "$RELEASE_TAG" '.tag == $tag and .schemaVersion == 1' .release/latest.json >/dev/null
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Prepare app assets
-        run: |
-          base64 -d assets/icon.png.b64 > assets/icon.png
-          test -s assets/icon.png
-          test -s assets/evrasia_hd_glitch.mp4
-
-      - name: TypeScript check
-        run: pnpm exec tsc --noEmit
-
-      - name: Remember source screen hash
-        shell: bash
-        run: echo "SOURCE_SCREEN_HASH=$(sha256sum 'app/(tabs)/index.tsx' | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - name: Expo prebuild
-        run: pnpm exec expo prebuild --platform android --no-install --clean
-
-      - name: Verify generated Android project
+      - name: Commit updated documentation
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         shell: bash
         run: |
-          grep -Eq '^newArchEnabled=true$' android/gradle.properties
-          grep -Eq '^reactNativeArchitectures=arm64-v8a$' android/gradle.properties
-          grep -Fq 'android:windowSoftInputMode="adjustResize"' android/app/src/main/AndroidManifest.xml
-          ACTUAL=$(sha256sum 'app/(tabs)/index.tsx' | cut -d' ' -f1)
-          test "$SOURCE_SCREEN_HASH" = "$ACTUAL" || { echo 'prebuild changed source index.tsx' >&2; exit 1; }
-          grep -Fq 'EVRASIA_DIRECTIONAL_AUTOSCROLL' node_modules/react-native-draggable-flatlist/src/hooks/useAutoScroll.tsx
-
-      - name: TypeScript check after prebuild
-        run: pnpm exec tsc --noEmit
-
-      - name: Build release APK
-        run: cd android && ./gradlew :app:assembleRelease --no-daemon
-
-      - name: Verify APK contains arm64 only
-        shell: bash
-        run: |
-          APK='android/app/build/outputs/apk/release/app-release.apk'
-          unzip -l "$APK" | grep -Fq 'lib/arm64-v8a/'
-          if unzip -l "$APK" | grep -Eq 'lib/(armeabi-v7a|x86|x86_64)/'; then
-            echo 'APK contains unexpected ABI' >&2
-            exit 1
+          set -euo pipefail
+          if git diff --quiet -- README.md ARCHITECTURE.md CHANGELOG.md RELEASE.md .release/latest.json; then
+            echo "Release documentation is already current"
+            exit 0
           fi
 
-      - name: Rename APK
-        shell: bash
-        run: cp android/app/build/outputs/apk/release/app-release.apk "evrasia-hd-v${{ steps.version.outputs.number }}-arm64.apk"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md ARCHITECTURE.md CHANGELOG.md RELEASE.md .release/latest.json
+          git commit -m "docs: update release documentation for ${RELEASE_TAG}"
 
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Евразия HD v${{ steps.version.outputs.number }}
-          files: evrasia-hd-v${{ steps.version.outputs.number }}-arm64.apk
-          make_latest: true
-
-      - name: Keep APKs for current and previous releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CURRENT_TAG: ${{ steps.version.outputs.tag }}
-          CURRENT_NUMBER: ${{ steps.version.outputs.number }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          PREVIOUS_NUMBER=$((CURRENT_NUMBER - 1))
-          PREVIOUS_TAG="v$PREVIOUS_NUMBER"
-          gh api --paginate "/repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' | while read -r TAG; do
-            [ -z "$TAG" ] && continue
-            [ "$TAG" = "$CURRENT_TAG" ] && continue
-            [ "$PREVIOUS_NUMBER" -ge 1 ] && [ "$TAG" = "$PREVIOUS_TAG" ] && continue
-            gh api "/repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[]? | select(.name | endswith(".apk")) | .id' | while read -r ASSET_ID; do
-              [ -z "$ASSET_ID" ] && continue
-              gh api --method DELETE "/repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
-            done
+          for ATTEMPT in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "Release documentation updated for ${RELEASE_TAG}"
+              exit 0
+            fi
+            git pull --rebase origin main
+            sleep $((ATTEMPT * 2))
           done
 
-      - name: Delete completed Actions artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].id' | while read -r ARTIFACT_ID; do
-            [ -z "$ARTIFACT_ID" ] && continue
-            gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID"
-          done
+          echo "Could not publish release documentation update"
+          exit 1
+
