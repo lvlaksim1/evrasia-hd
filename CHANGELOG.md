@@ -1,6 +1,22 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v14-START -->
+## v14 — 2026-09-10T23:25:14Z
+
+- Release commit: `92f6ba606bf1069c5128d91739df4b075fd413cf`
+- Artifact: `evrasia-hd-v14.apk`
+- SHA-256: `a4a56e10bdc0d44cd144c39a8e29a3a694bfcd8959c5170364d2d787d4add09f`
+- Previous release: **v13**
+
+### Changes
+
+- v14: eliminate sortable list commit flicker [release]
+
+### Changed files
+
+- `App.tsx`
+<!-- AUTO-CHANGELOG-v14-END -->
 <!-- AUTO-CHANGELOG-v13-START -->
 ## v13 — 2026-09-10T23:04:59Z
 
