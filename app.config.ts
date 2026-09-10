@@ -34,7 +34,6 @@ const config: ExpoConfig = {
     permissions: [],
   },
   plugins: [
-    "expo-router",
     "expo-secure-store",
     "./plugins/with-sms-code",
     [
@@ -60,7 +59,7 @@ const config: ExpoConfig = {
       },
     ],
   ],
-  experiments: { typedRoutes: true, reactCompiler: true },
+  experiments: { reactCompiler: true },
 };
 
 export default config;
