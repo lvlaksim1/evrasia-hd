@@ -86,11 +86,13 @@ function displayRestaurantKind(kind?: Restaurant["kind"]) { return kind === "ali
 type SortableControls = { onLongPress: () => void; onPressOut: () => void; isActive: boolean; blockPress: boolean };
 type DragPreview = { from: number; to: number; height: number } | null;
 
-function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview, onDragCancel, onReorder, onDragEnd, children }: {
+function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, onHeightChange, onDragPreview, onDragCancel, onReorder, onDragEnd, children }: {
   index: number;
   count: number;
+  rowHeights: number[];
   shiftOffset: number;
   dragging: boolean;
+  onHeightChange: (height: number) => void;
   onDragPreview: (from: number, to: number, height: number) => void;
   onDragCancel: () => void;
   onReorder: (from: number, to: number) => void;
@@ -106,7 +108,10 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
   const hoverIndexRef = useRef(index);
   const countRef = useRef(count);
   const rowHeightRef = useRef(140);
+  const rowHeightsRef = useRef(rowHeights);
+  const dragHeightsRef = useRef(rowHeights);
   const settlingTargetRef = useRef<number | null>(null);
+  const heightChangeRef = useRef(onHeightChange);
   const previewRef = useRef(onDragPreview);
   const cancelRef = useRef(onDragCancel);
   const reorderRef = useRef(onReorder);
@@ -115,10 +120,63 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
   const [blockPress, setBlockPress] = useState(false);
 
   countRef.current = count;
+  rowHeightsRef.current = rowHeights;
+  heightChangeRef.current = onHeightChange;
   previewRef.current = onDragPreview;
   cancelRef.current = onDragCancel;
   reorderRef.current = onReorder;
   dragEndRef.current = onDragEnd;
+
+  const measuredHeight = (heights: number[], itemIndex: number) => {
+    const value = heights[itemIndex];
+    return Number.isFinite(value) && value > 0 ? value : Math.max(rowHeightRef.current, 1);
+  };
+
+  const targetForTranslation = (from: number, translation: number) => {
+    const heights = dragHeightsRef.current;
+    let target = from;
+    let distance = 0;
+
+    if (translation > 0) {
+      for (let candidate = from + 1; candidate < countRef.current; candidate += 1) {
+        const candidateHeight = measuredHeight(heights, candidate);
+        if (translation < distance + candidateHeight * 0.5) break;
+        target = candidate;
+        distance += candidateHeight;
+      }
+    } else if (translation < 0) {
+      const upward = -translation;
+      for (let candidate = from - 1; candidate >= 0; candidate -= 1) {
+        const candidateHeight = measuredHeight(heights, candidate);
+        if (upward < distance + candidateHeight * 0.5) break;
+        target = candidate;
+        distance += candidateHeight;
+      }
+    }
+
+    return target;
+  };
+
+  const translationForTarget = (from: number, to: number) => {
+    const heights = dragHeightsRef.current;
+    let distance = 0;
+
+    if (to > from) {
+      for (let itemIndex = from + 1; itemIndex <= to; itemIndex += 1) {
+        distance += measuredHeight(heights, itemIndex);
+      }
+      return distance;
+    }
+
+    if (to < from) {
+      for (let itemIndex = to; itemIndex < from; itemIndex += 1) {
+        distance += measuredHeight(heights, itemIndex);
+      }
+      return -distance;
+    }
+
+    return 0;
+  };
 
   useEffect(() => {
     if (!dragging) return;
@@ -157,7 +215,6 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
     const from = originIndexRef.current;
     const to = hoverIndexRef.current;
     const moved = from !== to;
-    const height = Math.max(rowHeightRef.current, 1);
 
     if (!moved) {
       Animated.parallel([
@@ -171,7 +228,7 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
       return;
     }
 
-    const targetTranslation = (to - from) * height;
+    const targetTranslation = translationForTarget(from, to);
     Animated.parallel([
       Animated.spring(translateY, {
         toValue: targetTranslation,
@@ -196,14 +253,12 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
     onPanResponderMove: (_, gesture) => {
       if (!activeRef.current) return;
 
-      const height = Math.max(rowHeightRef.current, 1);
       const from = originIndexRef.current;
-      const step = Math.round(gesture.dy / height);
-      const target = Math.max(0, Math.min(countRef.current - 1, from + step));
+      const target = targetForTranslation(from, gesture.dy);
 
       if (target !== hoverIndexRef.current) {
         hoverIndexRef.current = target;
-        previewRef.current(from, target, height);
+        previewRef.current(from, target, Math.max(rowHeightRef.current, 1));
       }
 
       translateY.setValue(gesture.dy);
@@ -219,6 +274,7 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
     originIndexRef.current = index;
     hoverIndexRef.current = index;
     settlingTargetRef.current = null;
+    dragHeightsRef.current = rowHeightsRef.current.slice();
     translateY.setValue(0);
     setBlockPress(true);
     setIsActive(true);
@@ -237,7 +293,11 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
 
   return <Animated.View
     {...responder.panHandlers}
-    onLayout={event => { rowHeightRef.current = event.nativeEvent.layout.height; }}
+    onLayout={event => {
+      const height = event.nativeEvent.layout.height;
+      rowHeightRef.current = height;
+      heightChangeRef.current(height);
+    }}
     style={[styles.accountItem, { transform: [{ translateY: combinedY }, { scale }] }, isActive && styles.dragActive]}
   >
     {children({ onLongPress, onPressOut, isActive, blockPress })}
@@ -247,6 +307,7 @@ function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview
 export default function HomeScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [dragPreview, setDragPreview] = useState<DragPreview>(null);
+  const [accountHeights, setAccountHeights] = useState<Record<string, number>>({});
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [busyPhone, setBusyPhone] = useState("");
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -307,6 +368,8 @@ export default function HomeScreen() {
   useEffect(() => {
     if (bootReady) Animated.timing(mainOpacity, { toValue: 1, duration: 320, useNativeDriver: true }).start();
   }, [bootReady, mainOpacity]);
+
+  const orderedAccountHeights = useMemo(() => accounts.map(account => accountHeights[account.phone] || 140), [accounts, accountHeights]);
 
   const filteredRestaurants = useMemo(() => {
     const q = normTitle(query);
@@ -651,8 +714,10 @@ export default function HomeScreen() {
           return <SortableAccountRow
             index={itemIndex}
             count={accounts.length}
+            rowHeights={orderedAccountHeights}
             shiftOffset={shiftOffset}
             dragging={dragPreview !== null}
+            onHeightChange={height => setAccountHeights(current => Math.abs((current[account.phone] || 0) - height) < 0.5 ? current : { ...current, [account.phone]: height })}
             onDragPreview={(from, to, height) => setDragPreview(current => current?.from === from && current.to === to && current.height === height ? current : { from, to, height })}
             onDragCancel={() => setDragPreview(null)}
             onReorder={(from, to) => {
