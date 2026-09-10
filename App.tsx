@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, LayoutAnimation, Modal,
+  ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
   PanResponder, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { NativeModules } from "react-native";
@@ -84,46 +84,108 @@ function checkinCountdown(lastCheckinAt?: number, now = Date.now()) {
 function displayRestaurantKind(kind?: Restaurant["kind"]) { return kind === "alias" ? "синоним" : "адрес"; }
 
 type SortableControls = { onLongPress: () => void; onPressOut: () => void; isActive: boolean; blockPress: boolean };
+type DragPreview = { from: number; to: number; height: number } | null;
 
-function SortableAccountRow({ index, count, onReorder, onDragEnd, children }: {
+function SortableAccountRow({ index, count, shiftOffset, dragging, onDragPreview, onDragCancel, onReorder, onDragEnd, children }: {
   index: number;
   count: number;
+  shiftOffset: number;
+  dragging: boolean;
+  onDragPreview: (from: number, to: number, height: number) => void;
+  onDragCancel: () => void;
   onReorder: (from: number, to: number) => void;
   onDragEnd: () => void;
   children: (controls: SortableControls) => ReactNode;
 }) {
   const translateY = useRef(new Animated.Value(0)).current;
+  const neighborY = useRef(new Animated.Value(0)).current;
   const lift = useRef(new Animated.Value(0)).current;
   const activeRef = useRef(false);
   const claimedRef = useRef(false);
-  const movedRef = useRef(false);
-  const indexRef = useRef(index);
+  const originIndexRef = useRef(index);
+  const hoverIndexRef = useRef(index);
   const countRef = useRef(count);
   const rowHeightRef = useRef(140);
-  const offsetRef = useRef(0);
+  const settlingTargetRef = useRef<number | null>(null);
+  const previewRef = useRef(onDragPreview);
+  const cancelRef = useRef(onDragCancel);
   const reorderRef = useRef(onReorder);
   const dragEndRef = useRef(onDragEnd);
   const [isActive, setIsActive] = useState(false);
   const [blockPress, setBlockPress] = useState(false);
 
-  indexRef.current = index;
   countRef.current = count;
+  previewRef.current = onDragPreview;
+  cancelRef.current = onDragCancel;
   reorderRef.current = onReorder;
   dragEndRef.current = onDragEnd;
+
+  useEffect(() => {
+    if (!dragging) return;
+    Animated.spring(neighborY, {
+      toValue: shiftOffset,
+      damping: 24,
+      stiffness: 260,
+      mass: 0.7,
+      overshootClamping: true,
+      useNativeDriver: true,
+    }).start();
+  }, [dragging, neighborY, shiftOffset]);
+
+  useLayoutEffect(() => {
+    if (!dragging) {
+      neighborY.stopAnimation();
+      neighborY.setValue(0);
+    }
+
+    const settlingTarget = settlingTargetRef.current;
+    if (settlingTarget !== null && index === settlingTarget) {
+      translateY.stopAnimation();
+      translateY.setValue(0);
+      settlingTargetRef.current = null;
+      setIsActive(false);
+      dragEndRef.current();
+      setTimeout(() => setBlockPress(false), 180);
+    }
+  }, [dragging, index, neighborY, translateY]);
 
   const finishDrag = () => {
     if (!activeRef.current) return;
     activeRef.current = false;
     claimedRef.current = false;
-    offsetRef.current = 0;
-    const moved = movedRef.current;
-    movedRef.current = false;
+
+    const from = originIndexRef.current;
+    const to = hoverIndexRef.current;
+    const moved = from !== to;
+    const height = Math.max(rowHeightRef.current, 1);
+
+    if (!moved) {
+      Animated.parallel([
+        Animated.spring(translateY, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
+        Animated.spring(lift, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
+      ]).start(() => {
+        setIsActive(false);
+        cancelRef.current();
+        setTimeout(() => setBlockPress(false), 80);
+      });
+      return;
+    }
+
+    const targetTranslation = (to - from) * height;
     Animated.parallel([
-      Animated.spring(translateY, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
+      Animated.spring(translateY, {
+        toValue: targetTranslation,
+        damping: 22,
+        stiffness: 280,
+        mass: 0.7,
+        overshootClamping: true,
+        useNativeDriver: true,
+      }),
       Animated.spring(lift, { toValue: 0, damping: 18, stiffness: 240, mass: 0.65, useNativeDriver: true }),
-    ]).start(() => setIsActive(false));
-    if (moved) dragEndRef.current();
-    setTimeout(() => setBlockPress(false), moved ? 260 : 80);
+    ]).start(() => {
+      settlingTargetRef.current = to;
+      reorderRef.current(from, to);
+    });
   };
 
   const responder = useMemo(() => PanResponder.create({
@@ -133,32 +195,18 @@ function SortableAccountRow({ index, count, onReorder, onDragEnd, children }: {
     onPanResponderGrant: () => { claimedRef.current = true; },
     onPanResponderMove: (_, gesture) => {
       if (!activeRef.current) return;
+
       const height = Math.max(rowHeightRef.current, 1);
-      let translation = gesture.dy + offsetRef.current;
-      let current = indexRef.current;
-      let target = current;
+      const from = originIndexRef.current;
+      const step = Math.round(gesture.dy / height);
+      const target = Math.max(0, Math.min(countRef.current - 1, from + step));
 
-      while (translation > height * 0.52 && target < countRef.current - 1) {
-        target += 1;
-        translation -= height;
-        offsetRef.current -= height;
-      }
-      while (translation < -height * 0.52 && target > 0) {
-        target -= 1;
-        translation += height;
-        offsetRef.current += height;
+      if (target !== hoverIndexRef.current) {
+        hoverIndexRef.current = target;
+        previewRef.current(from, target, height);
       }
 
-      if (target !== current) {
-        movedRef.current = true;
-        LayoutAnimation.configureNext({
-          duration: 240,
-          update: { type: LayoutAnimation.Types.easeInEaseOut },
-        });
-        reorderRef.current(current, target);
-        indexRef.current = target;
-      }
-      translateY.setValue(translation);
+      translateY.setValue(gesture.dy);
     },
     onPanResponderRelease: finishDrag,
     onPanResponderTerminate: finishDrag,
@@ -168,11 +216,13 @@ function SortableAccountRow({ index, count, onReorder, onDragEnd, children }: {
   const onLongPress = () => {
     activeRef.current = true;
     claimedRef.current = false;
-    movedRef.current = false;
-    indexRef.current = index;
-    offsetRef.current = 0;
+    originIndexRef.current = index;
+    hoverIndexRef.current = index;
+    settlingTargetRef.current = null;
+    translateY.setValue(0);
     setBlockPress(true);
     setIsActive(true);
+    previewRef.current(index, index, Math.max(rowHeightRef.current, 1));
     Animated.spring(lift, { toValue: 1, damping: 16, stiffness: 260, mass: 0.6, useNativeDriver: true }).start();
   };
 
@@ -183,11 +233,12 @@ function SortableAccountRow({ index, count, onReorder, onDragEnd, children }: {
   };
 
   const scale = lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] });
+  const combinedY = Animated.add(translateY, neighborY);
 
   return <Animated.View
     {...responder.panHandlers}
     onLayout={event => { rowHeightRef.current = event.nativeEvent.layout.height; }}
-    style={[styles.accountItem, { transform: [{ translateY }, { scale }] }, isActive && styles.dragActive]}
+    style={[styles.accountItem, { transform: [{ translateY: combinedY }, { scale }] }, isActive && styles.dragActive]}
   >
     {children({ onLongPress, onPressOut, isActive, blockPress })}
   </Animated.View>;
@@ -195,6 +246,7 @@ function SortableAccountRow({ index, count, onReorder, onDragEnd, children }: {
 
 export default function HomeScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [dragPreview, setDragPreview] = useState<DragPreview>(null);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [busyPhone, setBusyPhone] = useState("");
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -583,15 +635,26 @@ export default function HomeScreen() {
       </View>
       <FlatList
         data={accounts}
+        extraData={dragPreview}
         keyExtractor={account => account.phone}
         style={styles.flex}
         contentContainerStyle={styles.content}
+        scrollEnabled={!dragPreview}
+        removeClippedSubviews={false}
         ListEmptyComponent={<View style={styles.emptyCard}><Text style={styles.emptyTitle}>Аккаунтов пока нет</Text><Text style={styles.muted}>Добавьте аккаунт в настройках.</Text></View>}
         renderItem={({ item: account, index: itemIndex }) => {
           const timer = checkinCountdown(account.lastCheckinAt, clock);
+          const shiftOffset = !dragPreview ? 0
+            : itemIndex > dragPreview.from && itemIndex <= dragPreview.to ? -dragPreview.height
+            : itemIndex < dragPreview.from && itemIndex >= dragPreview.to ? dragPreview.height
+            : 0;
           return <SortableAccountRow
             index={itemIndex}
             count={accounts.length}
+            shiftOffset={shiftOffset}
+            dragging={dragPreview !== null}
+            onDragPreview={(from, to, height) => setDragPreview(current => current?.from === from && current.to === to && current.height === height ? current : { from, to, height })}
+            onDragCancel={() => setDragPreview(null)}
             onReorder={(from, to) => {
               setAccounts(currentAccounts => {
                 const next = [...currentAccounts];
@@ -600,6 +663,7 @@ export default function HomeScreen() {
                 void saveAccounts(next);
                 return next;
               });
+              setDragPreview(null);
             }}
             onDragEnd={() => appendLog("Аккаунты: изменён порядок карточек")}
           >
