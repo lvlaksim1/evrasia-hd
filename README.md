@@ -3,17 +3,17 @@
 <!-- AUTO-RELEASE-START -->
 ## Текущий релиз
 
-- Версия: **v5**
-- `versionCode`: **5**
-- `versionName`: **v5**
+- Версия: **v6**
+- `versionCode`: **6**
+- `versionName`: **v6**
 - package: `com.evrasia.hd`
-- commit: `2a61e76c3e14b85ef42b9047e28ea0fddb2d22dd`
-- APK: `evrasia-hd-v5.apk`
-- SHA-256: `e9d80bcfa3cb328187e22eb6ddf706d16c92ec28749bde2e2394b11a936d853f`
-- Опубликован: `2026-09-10T17:43:45Z`
-- Предыдущий релиз: **v4**
-- Release: https://github.com/lvlaksim1/evrasia-hd/releases/tag/v5
-- APK: https://github.com/lvlaksim1/evrasia-hd/releases/download/v5/evrasia-hd-v5.apk
+- commit: `6c1334991c0ebc383c7f314fe2dd23ea0b93e0fe`
+- APK: `evrasia-hd-v6.apk`
+- SHA-256: `b42eeae23111bddc5cf2de83cd1a1e8ea8a2d371747f826bf7bee5a0c55de97d`
+- Опубликован: `2026-09-10T17:54:44Z`
+- Предыдущий релиз: **v5**
+- Release: https://github.com/lvlaksim1/evrasia-hd/releases/tag/v6
+- APK: https://github.com/lvlaksim1/evrasia-hd/releases/download/v6/evrasia-hd-v6.apk
 <!-- AUTO-RELEASE-END -->
 
 Чистый репозиторий приложения «Евразия HD».

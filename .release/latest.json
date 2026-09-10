@@ -1,25 +1,27 @@
 {
   "schemaVersion": 1,
-  "releaseNumber": 5,
-  "tag": "v5",
-  "versionCode": 5,
-  "versionName": "v5",
+  "releaseNumber": 6,
+  "tag": "v6",
+  "versionCode": 6,
+  "versionName": "v6",
   "packageId": "com.evrasia.hd",
-  "commit": "2a61e76c3e14b85ef42b9047e28ea0fddb2d22dd",
-  "artifact": "evrasia-hd-v5.apk",
-  "sha256": "e9d80bcfa3cb328187e22eb6ddf706d16c92ec28749bde2e2394b11a936d853f",
-  "publishedAt": "2026-09-10T17:43:45Z",
-  "previousRelease": "v4",
-  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v5",
-  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v5/evrasia-hd-v5.apk",
+  "commit": "6c1334991c0ebc383c7f314fe2dd23ea0b93e0fe",
+  "artifact": "evrasia-hd-v6.apk",
+  "sha256": "b42eeae23111bddc5cf2de83cd1a1e8ea8a2d371747f826bf7bee5a0c55de97d",
+  "publishedAt": "2026-09-10T17:54:44Z",
+  "previousRelease": "v5",
+  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v6",
+  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v6/evrasia-hd-v6.apk",
   "commits": [
-    "experiment: replace expo-video with native startup video [release]",
-    "fix: type native startup video props [release]"
+    "experiment: replace draggable stack with React Native PanResponder [release]",
+    "fix: correct v6 dependency manifest [release]"
   ],
   "changedFiles": [
+    ".github/actions/build-apk/action.yml",
     "app/(tabs)/index.tsx",
+    "app/_layout.tsx",
     "package.json",
-    "plugins/with-sms-code.js",
-    "pnpm-lock.yaml"
+    "pnpm-lock.yaml",
+    "scripts/patch-draggable-autoscroll.mjs"
   ]
 }

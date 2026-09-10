@@ -1,6 +1,28 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v6-START -->
+## v6 — 2026-09-10T17:54:44Z
+
+- Release commit: `6c1334991c0ebc383c7f314fe2dd23ea0b93e0fe`
+- Artifact: `evrasia-hd-v6.apk`
+- SHA-256: `b42eeae23111bddc5cf2de83cd1a1e8ea8a2d371747f826bf7bee5a0c55de97d`
+- Previous release: **v5**
+
+### Changes
+
+- experiment: replace draggable stack with React Native PanResponder [release]
+- fix: correct v6 dependency manifest [release]
+
+### Changed files
+
+- `.github/actions/build-apk/action.yml`
+- `app/(tabs)/index.tsx`
+- `app/_layout.tsx`
+- `package.json`
+- `pnpm-lock.yaml`
+- `scripts/patch-draggable-autoscroll.mjs`
+<!-- AUTO-CHANGELOG-v6-END -->
 <!-- AUTO-CHANGELOG-v5-START -->
 ## v5 — 2026-09-10T17:43:45Z
 
