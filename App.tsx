@@ -306,7 +306,8 @@ function SortableAccountRow({ index, count, rowHeights, shiftOffset, dragging, o
 
 export default function HomeScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [dragPreview, setDragPreview] = useState<DragPreview>(null);\n  const [accountHeights, setAccountHeights] = useState<Record<string, number>>({});
+  const [dragPreview, setDragPreview] = useState<DragPreview>(null);
+  const [accountHeights, setAccountHeights] = useState<Record<string, number>>({});
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [busyPhone, setBusyPhone] = useState("");
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -713,8 +714,10 @@ export default function HomeScreen() {
           return <SortableAccountRow
             index={itemIndex}
             count={accounts.length}
+            rowHeights={orderedAccountHeights}
             shiftOffset={shiftOffset}
             dragging={dragPreview !== null}
+            onHeightChange={height => setAccountHeights(current => Math.abs((current[account.phone] || 0) - height) < 0.5 ? current : { ...current, [account.phone]: height })}
             onDragPreview={(from, to, height) => setDragPreview(current => current?.from === from && current.to === to && current.height === height ? current : { from, to, height })}
             onDragCancel={() => setDragPreview(null)}
             onReorder={(from, to) => {
