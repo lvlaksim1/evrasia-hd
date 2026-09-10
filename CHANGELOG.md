@@ -1,6 +1,22 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v3-START -->
+## v3 — 2026-09-10T15:32:37Z
+
+- Release commit: `b9cd62d1fe8d2928e8b1111930d29dc0c9a41b07`
+- Artifact: `evrasia-hd-v3.apk`
+- SHA-256: `5c44fce5682242e7ca41f01c3627f331be7ff0eaa9d644460f157b1f4c7c75b5`
+- Previous release: **v2**
+
+### Changes
+
+- experiment: enable release size optimizations [release]
+
+### Changed files
+
+- `app.config.ts`
+<!-- AUTO-CHANGELOG-v3-END -->
 <!-- AUTO-CHANGELOG-v2-START -->
 ## v2 — 2026-09-10T12:41:57Z
 

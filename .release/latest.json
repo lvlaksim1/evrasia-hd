@@ -1,35 +1,21 @@
 {
   "schemaVersion": 1,
-  "releaseNumber": 2,
-  "tag": "v2",
-  "versionCode": 2,
-  "versionName": "v2",
+  "releaseNumber": 3,
+  "tag": "v3",
+  "versionCode": 3,
+  "versionName": "v3",
   "packageId": "com.evrasia.hd",
-  "commit": "1f176ad5f5ef40a1a79e584a7fed36a82f7d8adb",
-  "artifact": "evrasia-hd-v2.apk",
-  "sha256": "647ecff88e0d96874bda543afd2244edc667f85bd2a456cd2c834b22ecd95576",
-  "publishedAt": "2026-09-10T12:41:57Z",
-  "previousRelease": "v1",
-  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v2",
-  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v2/evrasia-hd-v2.apk",
+  "commit": "b9cd62d1fe8d2928e8b1111930d29dc0c9a41b07",
+  "artifact": "evrasia-hd-v3.apk",
+  "sha256": "5c44fce5682242e7ca41f01c3627f331be7ff0eaa9d644460f157b1f4c7c75b5",
+  "publishedAt": "2026-09-10T15:32:37Z",
+  "previousRelease": "v2",
+  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v3",
+  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v3/evrasia-hd-v3.apk",
   "commits": [
-    "ci: remove APK assets from previous releases",
-    "ci: keep APKs for current and previous releases",
-    "ci: migrate Evrasia HD to universal release standard",
-    "ci: fix private validation and signing fingerprint",
-    "ci: pin Evrasia HD signing certificate",
-    "ci: finalize APK validation pipeline",
-    "ci: make release summaries shell-safe",
-    "release: publish v2 [release]"
+    "experiment: enable release size optimizations [release]"
   ],
   "changedFiles": [
-    ".github/actions/build-apk/action.yml",
-    ".github/dependabot.yml",
-    ".github/scripts/update-release-docs.py",
-    ".github/workflows/_release-apk.yml",
-    ".github/workflows/_release-core.yml",
-    ".github/workflows/android-apk.yml",
-    ".github/workflows/validate-work-branches.yml",
     "app.config.ts"
   ]
 }
