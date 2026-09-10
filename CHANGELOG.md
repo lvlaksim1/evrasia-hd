@@ -1,6 +1,30 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v7-START -->
+## v7 — 2026-09-10T18:18:50Z
+
+- Release commit: `039a889ccb17b240a6c51e4c01db2d442db1eb8f`
+- Artifact: `evrasia-hd-v7.apk`
+- SHA-256: `5c9e03812a6764db8447c38a4c641dcf9820d02638fe46f25bd22d0c159be1f2`
+- Previous release: **v6**
+
+### Changes
+
+- experiment: remove Expo Router and navigation stack [release]
+
+### Changed files
+
+- `.github/actions/build-apk/action.yml`
+- `App.tsx`
+- `app.config.ts`
+- `app/(tabs)/_layout.tsx`
+- `app/_layout.tsx`
+- `index.js`
+- `package.json`
+- `plugins/with-sms-code.js`
+- `pnpm-lock.yaml`
+<!-- AUTO-CHANGELOG-v7-END -->
 <!-- AUTO-CHANGELOG-v6-START -->
 ## v6 — 2026-09-10T17:54:44Z
 

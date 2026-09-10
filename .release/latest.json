@@ -1,27 +1,29 @@
 {
   "schemaVersion": 1,
-  "releaseNumber": 6,
-  "tag": "v6",
-  "versionCode": 6,
-  "versionName": "v6",
+  "releaseNumber": 7,
+  "tag": "v7",
+  "versionCode": 7,
+  "versionName": "v7",
   "packageId": "com.evrasia.hd",
-  "commit": "6c1334991c0ebc383c7f314fe2dd23ea0b93e0fe",
-  "artifact": "evrasia-hd-v6.apk",
-  "sha256": "b42eeae23111bddc5cf2de83cd1a1e8ea8a2d371747f826bf7bee5a0c55de97d",
-  "publishedAt": "2026-09-10T17:54:44Z",
-  "previousRelease": "v5",
-  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v6",
-  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v6/evrasia-hd-v6.apk",
+  "commit": "039a889ccb17b240a6c51e4c01db2d442db1eb8f",
+  "artifact": "evrasia-hd-v7.apk",
+  "sha256": "5c9e03812a6764db8447c38a4c641dcf9820d02638fe46f25bd22d0c159be1f2",
+  "publishedAt": "2026-09-10T18:18:50Z",
+  "previousRelease": "v6",
+  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v7",
+  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v7/evrasia-hd-v7.apk",
   "commits": [
-    "experiment: replace draggable stack with React Native PanResponder [release]",
-    "fix: correct v6 dependency manifest [release]"
+    "experiment: remove Expo Router and navigation stack [release]"
   ],
   "changedFiles": [
     ".github/actions/build-apk/action.yml",
-    "app/(tabs)/index.tsx",
+    "App.tsx",
+    "app.config.ts",
+    "app/(tabs)/_layout.tsx",
     "app/_layout.tsx",
+    "index.js",
     "package.json",
-    "pnpm-lock.yaml",
-    "scripts/patch-draggable-autoscroll.mjs"
+    "plugins/with-sms-code.js",
+    "pnpm-lock.yaml"
   ]
 }
