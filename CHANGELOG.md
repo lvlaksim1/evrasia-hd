@@ -1,6 +1,28 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v4-START -->
+## v4 — 2026-09-10T15:47:44Z
+
+- Release commit: `7ff14b21b53f80bba8608d962ccc6c16ffba039f`
+- Artifact: `evrasia-hd-v4.apk`
+- SHA-256: `415213992b643e8f0687f8970d11084e6801e0f4b6ca5786d1552f01d1ecd446`
+- Previous release: **v3**
+
+### Changes
+
+- ci: prepare dependency trimming experiment
+- ci: fix dependency trimming experiment workflow
+- experiment: trim unused native dependencies
+- experiment: release trimmed dependency build [release]
+
+### Changed files
+
+- `app.config.ts`
+- `app/(tabs)/index.tsx`
+- `package.json`
+- `pnpm-lock.yaml`
+<!-- AUTO-CHANGELOG-v4-END -->
 <!-- AUTO-CHANGELOG-v3-START -->
 ## v3 — 2026-09-10T15:32:37Z
 

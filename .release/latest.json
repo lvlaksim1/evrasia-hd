@@ -1,21 +1,27 @@
 {
   "schemaVersion": 1,
-  "releaseNumber": 3,
-  "tag": "v3",
-  "versionCode": 3,
-  "versionName": "v3",
+  "releaseNumber": 4,
+  "tag": "v4",
+  "versionCode": 4,
+  "versionName": "v4",
   "packageId": "com.evrasia.hd",
-  "commit": "b9cd62d1fe8d2928e8b1111930d29dc0c9a41b07",
-  "artifact": "evrasia-hd-v3.apk",
-  "sha256": "5c44fce5682242e7ca41f01c3627f331be7ff0eaa9d644460f157b1f4c7c75b5",
-  "publishedAt": "2026-09-10T15:32:37Z",
-  "previousRelease": "v2",
-  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v3",
-  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v3/evrasia-hd-v3.apk",
+  "commit": "7ff14b21b53f80bba8608d962ccc6c16ffba039f",
+  "artifact": "evrasia-hd-v4.apk",
+  "sha256": "415213992b643e8f0687f8970d11084e6801e0f4b6ca5786d1552f01d1ecd446",
+  "publishedAt": "2026-09-10T15:47:44Z",
+  "previousRelease": "v3",
+  "releaseUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/tag/v4",
+  "artifactUrl": "https://github.com/lvlaksim1/evrasia-hd/releases/download/v4/evrasia-hd-v4.apk",
   "commits": [
-    "experiment: enable release size optimizations [release]"
+    "ci: prepare dependency trimming experiment",
+    "ci: fix dependency trimming experiment workflow",
+    "experiment: trim unused native dependencies",
+    "experiment: release trimmed dependency build [release]"
   ],
   "changedFiles": [
-    "app.config.ts"
+    "app.config.ts",
+    "app/(tabs)/index.tsx",
+    "package.json",
+    "pnpm-lock.yaml"
   ]
 }
