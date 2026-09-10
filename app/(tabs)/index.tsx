@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
-  Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View,
+  PanResponder, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { NativeModules, requireNativeComponent } from "react-native";
 import type { ViewProps } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import DraggableFlatList, { ScaleDecorator, ShadowDecorator } from "react-native-draggable-flatlist";
 import {
   commonApiLogin, downloadRestaurants, friendlyApiError, getBonusCardTypes, getCheckin,
   getCommonCardCids, getCommonHistory, getProfile, getWriteOffCode, isAuthError, login,
@@ -89,6 +88,65 @@ function displayRestaurantKind(kind?: Restaurant["kind"]) { return kind === "ali
 
 function StartupIntro({ videoUri }: { videoUri?: string }) {
   return <View style={styles.startup}><NativeStartupVideo style={styles.startupVideo} videoUri={videoUri || ""} /></View>;
+}
+
+type SortableControls = { onLongPress: () => void; onPressOut: () => void; isActive: boolean };
+
+function SortableAccountRow({ index, count, onReorder, children }: {
+  index: number;
+  count: number;
+  onReorder: (from: number, to: number) => void;
+  children: (controls: SortableControls) => ReactNode;
+}) {
+  const translateY = useRef(new Animated.Value(0)).current;
+  const activeRef = useRef(false);
+  const claimedRef = useRef(false);
+  const [isActive, setIsActive] = useState(false);
+  const [rowHeight, setRowHeight] = useState(140);
+
+  const finishDrag = (dy: number) => {
+    const step = Math.round(dy / Math.max(rowHeight, 1));
+    const target = Math.max(0, Math.min(count - 1, index + step));
+    translateY.setValue(0);
+    activeRef.current = false;
+    claimedRef.current = false;
+    setIsActive(false);
+    if (target !== index) onReorder(index, target);
+  };
+
+  const responder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, gesture) => activeRef.current && Math.abs(gesture.dy) > 2,
+    onPanResponderGrant: () => { claimedRef.current = true; },
+    onPanResponderMove: (_, gesture) => { if (activeRef.current) translateY.setValue(gesture.dy); },
+    onPanResponderRelease: (_, gesture) => finishDrag(gesture.dy),
+    onPanResponderTerminate: (_, gesture) => finishDrag(gesture.dy),
+    onPanResponderTerminationRequest: () => false,
+  }), [count, index, onReorder, rowHeight, translateY]);
+
+  const onLongPress = () => {
+    activeRef.current = true;
+    claimedRef.current = false;
+    setIsActive(true);
+  };
+
+  const onPressOut = () => {
+    setTimeout(() => {
+      if (!claimedRef.current) {
+        activeRef.current = false;
+        setIsActive(false);
+        translateY.setValue(0);
+      }
+    }, 0);
+  };
+
+  return <Animated.View
+    {...responder.panHandlers}
+    onLayout={event => setRowHeight(event.nativeEvent.layout.height)}
+    style={[styles.accountItem, { transform: [{ translateY }] }, isActive && styles.dragActive]}
+  >
+    {children({ onLongPress, onPressOut, isActive })}
+  </Animated.View>;
 }
 
 export default function HomeScreen() {
@@ -480,54 +538,54 @@ export default function HomeScreen() {
           {refreshingAll ? <ActivityIndicator color="#F4C35A" /> : <Text style={[styles.headerRefresh, !accounts.length && styles.disabledText]}>↻</Text>}
         </Pressable>
       </View>
-      <DraggableFlatList
+      <FlatList
         data={accounts}
-        keyExtractor={(account, index) => `${account.phone}_${index}`}
-        containerStyle={styles.flex}
+        keyExtractor={(account, itemIndex) => `${account.phone}_${itemIndex}`}
+        style={styles.flex}
         contentContainerStyle={styles.content}
-        dragItemOverflow
-        autoscrollThreshold={80}
-        autoscrollSpeed={120}
-        animationConfig={{ damping: 18, stiffness: 220, mass: 0.72 }}
-        onDragEnd={({ data }) => {
-          setAccounts(data);
-          void saveAccounts(data);
-          appendLog("Аккаунты: изменён порядок карточек");
-        }}
         ListEmptyComponent={<View style={styles.emptyCard}><Text style={styles.emptyTitle}>Аккаунтов пока нет</Text><Text style={styles.muted}>Добавьте аккаунт в настройках.</Text></View>}
-        renderItem={({ item: account, drag, isActive }) => {
+        renderItem={({ item: account, index: itemIndex }) => {
           const timer = checkinCountdown(account.lastCheckinAt, clock);
-          return <View style={styles.accountItem}><ScaleDecorator>
-            <ShadowDecorator>
-              <View style={styles.accountCard}>
-                <Pressable
-                  style={styles.accountMain}
-                  onPress={() => openProfile(account)}
-                  onLongPress={drag}
-                  delayLongPress={360}
-                  disabled={isActive}
-                >
-                  <View style={styles.rowBetween}><Text style={styles.phone}>{account.phone}</Text><View style={styles.refreshSlot} /></View>
-                  <View style={styles.compactStats}>
-                    <View><Text style={styles.statLabel}>Бонусы</Text><Text style={styles.bonus}>{account.bonusPoints.toLocaleString("ru-RU")}</Text></View>
-                    <View style={styles.compactMetric}><Text style={styles.statLabel}>Начисление</Text><Text style={styles.metricValue}>{account.bonusPercent}%</Text></View>
-                    <View style={styles.compactMetric}><Text style={styles.statLabel}>Покупки</Text><Text style={styles.metricValue}>{account.totalSpent.toLocaleString("ru-RU")} ₽</Text></View>
-                  </View>
-                  {account.lastCheckinCode ? <Text style={styles.checkinCode}>Последний чекин: {account.lastCheckinCode}</Text> : null}
-                  {timer ? <Text style={styles.checkinTimer}>Следующий чекин через {timer}</Text> : null}
-                  <Text style={styles.updated}>Обновлено: {account.lastUpdated || "—"}</Text>
-                </Pressable>
-                <Pressable style={[styles.refreshSlot, { position: "absolute", top: 18, right: 18, zIndex: 2 }]} onPress={() => refreshAccount(account)} disabled={busyPhone === account.phone || isActive}>
-                  {busyPhone === account.phone ? <ActivityIndicator color="#F4C35A" /> : <Text style={styles.reload}>↻</Text>}
-                </Pressable>
-                <View style={styles.cardActions}>
-                  <CardButton title="Чекин" onPress={() => { setSelectedAccount(account); setQuery(""); setRestaurantVisible(true); }} />
-                  <CardButton title="Код" onPress={() => requestWriteOff(account)} />
-                  <CardButton title="История" onPress={() => openHistory(account)} />
+          return <SortableAccountRow
+            index={itemIndex}
+            count={accounts.length}
+            onReorder={(from, to) => {
+              const next = [...accounts];
+              const [moved] = next.splice(from, 1);
+              next.splice(to, 0, moved);
+              setAccounts(next);
+              void saveAccounts(next);
+              appendLog("Аккаунты: изменён порядок карточек");
+            }}
+          >
+            {({ onLongPress, onPressOut, isActive }) => <View style={styles.accountCard}>
+              <Pressable
+                style={styles.accountMain}
+                onPress={() => { if (!isActive) openProfile(account); }}
+                onLongPress={onLongPress}
+                onPressOut={onPressOut}
+                delayLongPress={360}
+              >
+                <View style={styles.rowBetween}><Text style={styles.phone}>{account.phone}</Text><View style={styles.refreshSlot} /></View>
+                <View style={styles.compactStats}>
+                  <View><Text style={styles.statLabel}>Бонусы</Text><Text style={styles.bonus}>{account.bonusPoints.toLocaleString("ru-RU")}</Text></View>
+                  <View style={styles.compactMetric}><Text style={styles.statLabel}>Начисление</Text><Text style={styles.metricValue}>{account.bonusPercent}%</Text></View>
+                  <View style={styles.compactMetric}><Text style={styles.statLabel}>Покупки</Text><Text style={styles.metricValue}>{account.totalSpent.toLocaleString("ru-RU")} ₽</Text></View>
                 </View>
+                {account.lastCheckinCode ? <Text style={styles.checkinCode}>Последний чекин: {account.lastCheckinCode}</Text> : null}
+                {timer ? <Text style={styles.checkinTimer}>Следующий чекин через {timer}</Text> : null}
+                <Text style={styles.updated}>Обновлено: {account.lastUpdated || "—"}</Text>
+              </Pressable>
+              <Pressable style={[styles.refreshSlot, { position: "absolute", top: 18, right: 18, zIndex: 2 }]} onPress={() => refreshAccount(account)} disabled={busyPhone === account.phone || isActive}>
+                {busyPhone === account.phone ? <ActivityIndicator color="#F4C35A" /> : <Text style={styles.reload}>↻</Text>}
+              </Pressable>
+              <View style={styles.cardActions}>
+                <CardButton title="Чекин" onPress={() => { setSelectedAccount(account); setQuery(""); setRestaurantVisible(true); }} />
+                <CardButton title="Код" onPress={() => requestWriteOff(account)} />
+                <CardButton title="История" onPress={() => openHistory(account)} />
               </View>
-            </ShadowDecorator>
-          </ScaleDecorator></View>;
+            </View>}
+          </SortableAccountRow>;
         }}
       />
 
@@ -715,7 +773,7 @@ const styles = StyleSheet.create({
   brandWrap: { flexDirection: "row", alignItems: "center" }, customBrandLogo: { width: 230, height: 62 }, brandText: { color: "#F4C35A", fontSize: 30, fontWeight: "900", fontStyle: "italic", letterSpacing: -1.1 },
   hdSplash: { marginLeft: 5, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "#FF603E", borderTopLeftRadius: 18, borderTopRightRadius: 11, borderBottomLeftRadius: 9, borderBottomRightRadius: 20, transform: [{ rotate: "-9deg" }, { scaleX: 1.08 }] },
   hdText: { color: "#FFF5D6", fontSize: 17, fontWeight: "900", fontStyle: "italic", letterSpacing: 0.8 },
-  content: { paddingHorizontal: 14, paddingBottom: 21 }, accountItem: { paddingBottom: 9 }, emptyCard: { backgroundColor: "#102019", borderRadius: 18, borderWidth: 1, borderColor: "#294536", padding: 17 },
+  content: { paddingHorizontal: 14, paddingBottom: 21 }, accountItem: { paddingBottom: 9 }, dragActive: { zIndex: 20, elevation: 8, opacity: 0.97 }, emptyCard: { backgroundColor: "#102019", borderRadius: 18, borderWidth: 1, borderColor: "#294536", padding: 17 },
   emptyTitle: { color: "#F5F7F5", fontSize: 18, fontWeight: "900" }, muted: { color: "#81958A", fontSize: 12, marginTop: 4 },
   accountCard: { backgroundColor: "#102019", borderRadius: 19, borderWidth: 1, borderColor: "#2C503C", overflow: "hidden" }, accountMain: { paddingHorizontal: 13, paddingVertical: 11 },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, phone: { color: "#F5F7F5", fontSize: 15, fontWeight: "900" }, reload: { color: "#E6B44B", fontSize: 21 },

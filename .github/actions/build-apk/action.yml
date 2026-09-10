@@ -75,7 +75,6 @@ runs:
         grep -Fq 'android:windowSoftInputMode="adjustResize"' android/app/src/main/AndroidManifest.xml
         ACTUAL=$(sha256sum 'app/(tabs)/index.tsx' | cut -d' ' -f1)
         test "$SOURCE_SCREEN_HASH" = "$ACTUAL" || { echo 'prebuild changed source index.tsx' >&2; exit 1; }
-        grep -Fq 'EVRASIA_DIRECTIONAL_AUTOSCROLL' node_modules/react-native-draggable-flatlist/src/hooks/useAutoScroll.tsx
 
     - name: TypeScript check after prebuild
       shell: bash
