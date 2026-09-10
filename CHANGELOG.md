@@ -1,6 +1,22 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v11-START -->
+## v11 — 2026-09-10T21:57:48Z
+
+- Release commit: `e6414a671725d7843bc0d8ffc75539df86209414`
+- Artifact: `evrasia-hd-v11.apk`
+- SHA-256: `2b36b3681093f59cb368b39af2c6e0140bdb361398802db06e4dacae2ec40d01`
+- Previous release: **v10**
+
+### Changes
+
+- v11: fix variable-height card reorder [release]
+
+### Changed files
+
+- `App.tsx`
+<!-- AUTO-CHANGELOG-v11-END -->
 <!-- AUTO-CHANGELOG-v10-START -->
 ## v10 — 2026-09-10T21:06:19Z
 
