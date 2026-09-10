@@ -6,9 +6,7 @@ import {
 import { NativeModules } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
-import * as DocumentPicker from "expo-document-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { File, Paths } from "expo-file-system";
 import { useVideoPlayer, VideoView } from "expo-video";
 import DraggableFlatList, { ScaleDecorator, ShadowDecorator } from "react-native-draggable-flatlist";
 import {
@@ -437,31 +435,32 @@ export default function HomeScreen() {
     setRestaurants(next); await saveRestaurants(next); appendLog(`Рестораны: удалена запись «${item.title}»`); setAliasSource(null); setAliasTitle("");
   }
   async function chooseAppearance(kind: "logo" | "video" | "icon") {
-    try {
-      if (kind === "logo") {
-        const result = await DocumentPicker.getDocumentAsync({ type: "image/*", copyToCacheDirectory: true, multiple: false });
-        if (result.canceled || !result.assets[0]) return;
-        const asset = result.assets[0];
-        const source = new File(asset.uri);
-        const extension = asset.name && asset.name.includes(".") ? asset.name.slice(asset.name.lastIndexOf(".")) : ".img";
-        const target = new File(Paths.document, "evrasia-logo-" + Date.now() + extension);
-        source.copy(target);
-        const oldUri = await AsyncStorage.getItem("@evrasia/logoUri");
-        await AsyncStorage.setItem("@evrasia/logoUri", target.uri);
-        setAppearance(prev => ({ ...prev, logoUri: target.uri })); appendLog("Оформление: выбран пользовательский логотип");
-        if (oldUri && oldUri !== target.uri) { try { const oldFile = new File(oldUri); if (oldFile.exists) oldFile.delete(); } catch {} }
-        return;
-      }
-      const uri = kind === "video" ? await AppearanceMedia.pickVideo() : await AppearanceMedia.pickLauncherIcon();
+  try {
+    if (kind === "logo") {
+      const uri = await AppearanceMedia.pickLogo();
       if (!uri) return;
-      setAppearance(prev => ({ ...prev, [kind === "video" ? "videoUri" : "iconUri"]: uri })); appendLog(kind === "video" ? "Оформление: выбрано пользовательское стартовое видео" : "Оформление: выбрана пользовательская иконка и создан ярлык");
-      if (kind === "icon") showMessage("Иконка выбрана", "Android не разрешает произвольно заменить системную иконку установленного приложения. Поэтому создан новый ярлык Евразия hd с выбранной картинкой. Старый ярлык можно удалить с рабочего стола.");
-    } catch (e) { appendLog(`Оформление: ошибка · ${friendlyApiError(e)}`); showMessage("Оформление", friendlyApiError(e)); }
-  }
+      await AsyncStorage.removeItem("@evrasia/logoUri");
+      setAppearance(prev => ({ ...prev, logoUri: uri }));
+      appendLog("Оформление: выбран пользовательский логотип");
+      return;
+    }
+    const uri = kind === "video" ? await AppearanceMedia.pickVideo() : await AppearanceMedia.pickLauncherIcon();
+    if (!uri) return;
+    setAppearance(prev => ({ ...prev, [kind === "video" ? "videoUri" : "iconUri"]: uri }));
+    appendLog(kind === "video" ? "Оформление: выбрано пользовательское стартовое видео" : "Оформление: выбрана пользовательская иконка и создан ярлык");
+    if (kind === "icon") showMessage("Иконка выбрана", "Android не разрешает произвольно заменить системную иконку установленного приложения. Поэтому создан новый ярлык Евразия hd с выбранной картинкой. Старый ярлык можно удалить с рабочего стола.");
+  } catch (e) { appendLog(`Оформление: ошибка · ${friendlyApiError(e)}`); showMessage("Оформление", friendlyApiError(e)); }
+}
   async function resetAppearance(kind: "logo" | "video") {
-    if (kind === "logo") { const oldUri = await AsyncStorage.getItem("@evrasia/logoUri"); await AsyncStorage.removeItem("@evrasia/logoUri"); if (oldUri) { try { const oldFile = new File(oldUri); if (oldFile.exists) oldFile.delete(); } catch {} } } else { await AppearanceMedia.reset(kind); }
-    setAppearance(prev => ({ ...prev, [kind === "logo" ? "logoUri" : "videoUri"]: "" })); appendLog(kind === "logo" ? "Оформление: возвращён стандартный логотип" : "Оформление: возвращено стандартное стартовое видео");
+  if (kind === "logo") {
+    await AsyncStorage.removeItem("@evrasia/logoUri");
+    await AppearanceMedia.reset("logo");
+  } else {
+    await AppearanceMedia.reset(kind);
   }
+  setAppearance(prev => ({ ...prev, [kind === "logo" ? "logoUri" : "videoUri"]: "" }));
+  appendLog(kind === "logo" ? "Оформление: возвращён стандартный логотип" : "Оформление: возвращено стандартное стартовое видео");
+}
 
   function closeSettings() {
     if (aliasSource) { setAliasSource(null); setAliasTitle(""); return; }

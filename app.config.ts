@@ -36,7 +36,6 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     "expo-secure-store",
-    "@config-plugins/react-native-blob-util",
     "./plugins/with-sms-code",
     [
       "expo-splash-screen",

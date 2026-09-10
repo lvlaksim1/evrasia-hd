@@ -11,15 +11,12 @@
     "postinstall": "node scripts/patch-draggable-autoscroll.mjs"
   },
   "dependencies": {
-    "@config-plugins/react-native-blob-util": "12.0.0",
     "@expo/config-plugins": "54.0.5",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "expo": "~54.0.37",
     "expo-build-properties": "^1.0.10",
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.14",
-    "expo-document-picker": "~14.0.7",
-    "expo-file-system": "~19.0.21",
     "expo-router": "~6.0.24",
     "expo-secure-store": "~15.0.8",
     "expo-splash-screen": "~31.0.13",
@@ -27,7 +24,6 @@
     "expo-video": "~3.0.16",
     "react": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-blob-util": "0.21.2",
     "react-native-draggable-flatlist": "4.0.3",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-reanimated": "~4.1.1",
