@@ -4,6 +4,7 @@ import {
   Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { NativeModules, requireNativeComponent } from "react-native";
+import type { ViewProps } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -29,7 +30,8 @@ const AppearanceMedia = NativeModules.AppearanceMedia as {
   pickLauncherIcon: () => Promise<string | null>;
   reset: (kind: "logo" | "video" | "icon") => Promise<boolean>;
 };
-const NativeStartupVideo = requireNativeComponent<{ videoUri?: string }>("StartupVideo");
+type StartupVideoProps = ViewProps & { videoUri?: string };
+const NativeStartupVideo = requireNativeComponent<StartupVideoProps>("StartupVideo");
 const APP_VERSION = Constants.expoConfig?.version || "1";
 const CHECKIN_WINDOW_MS = 3 * 60 * 60 * 1000;
 type SettingsSection = "root" | "restaurants" | "cardTypes" | "appearance" | "log";
