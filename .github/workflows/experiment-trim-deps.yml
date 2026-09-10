@@ -93,7 +93,7 @@ jobs:
               if (kind === "icon") showMessage("Иконка выбрана", "Android не разрешает произвольно заменить системную иконку установленного приложения. Поэтому создан новый ярлык Евразия hd с выбранной картинкой. Старый ярлык можно удалить с рабочего стола.");
             } catch (e) { appendLog(`Оформление: ошибка · ${friendlyApiError(e)}`); showMessage("Оформление", friendlyApiError(e)); }
           }
-'''
+          '''
 
           reset = '''  async function resetAppearance(kind: "logo" | "video") {
             if (kind === "logo") {
