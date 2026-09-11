@@ -392,6 +392,111 @@ jobs:
               output.write("\nAPK_SIZE_REPORT\n")
           PY
 
+      - name: Diagnose native libraries and DEX
+        if: ${{ inputs.mode == 'validate' }}
+        env:
+          RELEASE_APK_FILENAME: ${{ steps.metadata.outputs.apk_filename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$RELEASE_APK_FILENAME"
+          test -s "$APK"
+
+          echo "=== NATIVE_LIBRARIES ==="
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          apk = Path(__import__("os").environ["RELEASE_APK_FILENAME"])
+          mib = 1024 * 1024
+          with zipfile.ZipFile(apk) as z:
+              libs = [
+                  (i.compress_size, i.file_size, i.filename)
+                  for i in z.infolist()
+                  if not i.is_dir() and i.filename.startswith("lib/") and i.filename.endswith(".so")
+              ]
+          for compressed, raw, name in sorted(libs, reverse=True):
+              print(f"{compressed / mib:8.3f} MiB compressed | {raw / mib:8.3f} MiB raw | {name}")
+          print(f"TOTAL_NATIVE_COMPRESSED={sum(x[0] for x in libs) / mib:.3f} MiB")
+          PY
+
+          NATIVE_DIR="$RUNNER_TEMP/native-analysis"
+          rm -rf "$NATIVE_DIR"
+          mkdir -p "$NATIVE_DIR"
+          unzip -q "$APK" 'lib/arm64-v8a/*.so' -d "$NATIVE_DIR"
+
+          echo "=== NATIVE_NEEDED_DEPENDENCIES ==="
+          for SO in "$NATIVE_DIR"/lib/arm64-v8a/*.so; do
+            [ -e "$SO" ] || continue
+            printf '%s -> ' "$(basename "$SO")"
+            readelf -d "$SO" 2>/dev/null | awk '/NEEDED/ {gsub(/\[|\]/, "", $5); printf "%s ", $5}'
+            echo
+          done
+
+          APKANALYZER=""
+          if command -v apkanalyzer >/dev/null 2>&1; then
+            APKANALYZER=$(command -v apkanalyzer)
+          else
+            APKANALYZER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer 2>/dev/null | sort | tail -1 || true)
+          fi
+          test -n "$APKANALYZER"
+          test -x "$APKANALYZER"
+          echo "APK_ANALYZER=$APKANALYZER"
+
+          echo "=== DEX_FILES ==="
+          "$APKANALYZER" dex list "$APK"
+          echo "=== DEX_REFERENCES ==="
+          "$APKANALYZER" dex references "$APK"
+
+          MAPPING="android/app/build/outputs/mapping/release/mapping.txt"
+          DEX_TREE="$RUNNER_TEMP/dex-packages.txt"
+          if [ -s "$MAPPING" ]; then
+            echo "R8_MAPPING=$MAPPING"
+            "$APKANALYZER" dex packages --defined-only --proguard-mappings "$MAPPING" "$APK" > "$DEX_TREE"
+          else
+            echo "R8_MAPPING=not-found"
+            "$APKANALYZER" dex packages --defined-only "$APK" > "$DEX_TREE"
+          fi
+
+          export DEX_TREE
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["DEX_TREE"])
+          rows = []
+          pattern = re.compile(r"^P\s+\S+\s+\d+\s+\d+\s+(\d+)\s+(.+?)\s*$")
+          for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+              match = pattern.match(line)
+              if not match:
+                  continue
+              size = int(match.group(1))
+              name = match.group(2)
+              rows.append((size, name))
+
+          print("=== DEX_TOP_LEVEL_PACKAGES ===")
+          for size, name in sorted((row for row in rows if "." not in row[1]), reverse=True):
+              print(f"{size / 1024:10.1f} KiB | {name}")
+
+          print("=== DEX_LARGEST_PACKAGE_NODES_DEPTH_LE_3 ===")
+          shallow = [(size, name) for size, name in rows if name.count(".") <= 2]
+          for size, name in sorted(shallow, reverse=True)[:50]:
+              print(f"{size / 1024:10.1f} KiB | {name}")
+
+          print("=== DEX_LARGEST_PACKAGE_NODES_ALL_DEPTHS ===")
+          for size, name in sorted(rows, reverse=True)[:50]:
+              print(f"{size / 1024:10.1f} KiB | {name}")
+
+          print(f"DEX_PACKAGE_ROWS={len(rows)}")
+          PY
+
+          echo "=== R8_MAPPING_TOP_PACKAGES ==="
+          if [ -s "$MAPPING" ]; then
+            awk '/^[^ ]+ -> [^ ]+:$/ {orig=$1; sub(/\.[^.]+$/, "", orig); count[orig]++} END {for (p in count) print count[p], p}' "$MAPPING" | sort -nr | head -50
+          fi
+
       - name: Write APK verification summary
         env:
           MODE: ${{ inputs.mode }}
