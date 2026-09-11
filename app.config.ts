@@ -50,6 +50,7 @@ const config: ExpoConfig = {
         android: {
           buildArchs: ["arm64-v8a"],
           minSdkVersion: 24,
+          networkInspector: false,
           enableMinifyInReleaseBuilds: true,
           enableShrinkResourcesInReleaseBuilds: true,
           enableBundleCompression: true,
