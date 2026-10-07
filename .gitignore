@@ -11,3 +11,14 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Repository storage policy
+/dist/
+/build/
+*.exe
+*.msi
+*.zip
+*.7z
+*.rar
+*.dll
+*.pdb
