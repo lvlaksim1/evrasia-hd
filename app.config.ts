@@ -58,6 +58,7 @@ const config: ExpoConfig = {
       },
     ],
     "./plugins/with-sms-code",
+    "./plugins/with-update-installer",
   ],
   experiments: { reactCompiler: true },
 };

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator, Animated, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal,
-  PanResponder, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View,
+  DeviceEventEmitter, PanResponder, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { NativeModules } from "react-native";
 import * as Clipboard from "expo-clipboard";
@@ -18,6 +18,7 @@ import {
   type Account,
 } from "@/lib/evrasia-storage";
 import type { Restaurant } from "@/data/evrasia-seed";
+import { checkGitHubUpdate, installGitHubUpdate, type AvailableUpdate } from "@/lib/evrasia-update";
 
 const SmsCode = NativeModules.SmsCode as { ensurePermission: () => Promise<boolean>; startWaiting: (checkin: string) => Promise<boolean> };
 const AppearanceMedia = NativeModules.AppearanceMedia as {
@@ -349,6 +350,11 @@ export default function HomeScreen() {
   const [aliasSource, setAliasSource] = useState<Restaurant | null>(null);
   const [aliasTitle, setAliasTitle] = useState("");
   const [dialog, setDialog] = useState<AppDialog>(null);
+  const [updateCheckBusy, setUpdateCheckBusy] = useState(false);
+  const [updateDownloading, setUpdateDownloading] = useState(false);
+  const [updatePercent, setUpdatePercent] = useState(0);
+  const checkingUpdateRef = useRef(false);
+  const installingUpdateRef = useRef(false);
   const [clock, setClock] = useState(Date.now());
   const [bootReady, setBootReady] = useState(false);
   const [appearance, setAppearance] = useState({ logoUri: "", videoUri: "", iconUri: "" });
@@ -379,6 +385,17 @@ export default function HomeScreen() {
     if (bootReady) Animated.timing(mainOpacity, { toValue: 1, duration: 320, useNativeDriver: true }).start();
   }, [bootReady, mainOpacity]);
 
+  useEffect(() => {
+    const listener = DeviceEventEmitter.addListener("EvrasiaUpdateProgress", (event: { percent?: number }) => {
+      if (typeof event?.percent === "number" && Number.isFinite(event.percent)) setUpdatePercent(Math.max(0, Math.min(100, event.percent)));
+    });
+    return () => listener.remove();
+  }, []);
+
+  useEffect(() => {
+    if (bootReady) void checkUpdates(false);
+  }, [bootReady]);
+
   const accountGeometry = useMemo(() => {
     let top = 0;
     const items = accounts.map(account => {
@@ -403,6 +420,58 @@ export default function HomeScreen() {
   function confirmAction(title: string, message: string, onConfirm: () => void | Promise<void>) {
     setDialog({ title, message, actions: [{ label: "Отмена", kind: "secondary" }, { label: "Подтвердить", kind: "danger", onPress: onConfirm }] });
   }
+  async function installUpdate(release: AvailableUpdate) {
+    if (installingUpdateRef.current) return;
+    installingUpdateRef.current = true;
+    setUpdateDownloading(true);
+    setUpdatePercent(0);
+    appendLog(`Обновление: загрузка ${release.tag} из GitHub Releases`);
+    try {
+      await installGitHubUpdate(release);
+      appendLog(`Обновление ${release.tag}: APK проверен, открыт системный установщик Android`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendLog(`Обновление ${release.tag}: ошибка · ${message}`);
+      showMessage("Не удалось обновить приложение", message);
+    } finally {
+      installingUpdateRef.current = false;
+      setUpdateDownloading(false);
+    }
+  }
+
+  async function checkUpdates(manual: boolean) {
+    if (checkingUpdateRef.current || installingUpdateRef.current) return;
+    checkingUpdateRef.current = true;
+    if (manual) setUpdateCheckBusy(true);
+    try {
+      const release = await checkGitHubUpdate();
+      if (!release) {
+        if (manual) showMessage("Обновления", "Установлена актуальная версия приложения.");
+        return;
+      }
+      appendLog(`Обновление: доступна версия ${release.tag}`);
+      if (manual) {
+        await installUpdate(release);
+      } else {
+        setDialog({
+          title: "Доступно обновление",
+          message: `В GitHub опубликована версия ${release.tag}. Установить обновление сейчас?`,
+          actions: [
+            { label: "Позже", kind: "secondary" },
+            { label: "Обновить", onPress: () => installUpdate(release) },
+          ],
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendLog(`Обновление: ошибка проверки · ${message}`);
+      if (manual) showMessage("Не удалось проверить обновления", message);
+    } finally {
+      checkingUpdateRef.current = false;
+      if (manual) setUpdateCheckBusy(false);
+    }
+  }
+
   function requestPassword(account: Account) {
     appendLog(`Авторизация ${account.phone}: требуется ввод пароля`);
     setSelectedAccount(account); setPassword(""); setLoginError(""); setLoginVisible(true);
@@ -792,6 +861,7 @@ export default function HomeScreen() {
           <SettingsRow title="Типы карт" onPress={openCardTypes} />
           <SettingsRow title="Оформление" onPress={() => setSettingsSection("appearance")} />
           <SettingsRow title="Журнал действий" onPress={() => setSettingsSection("log")} />
+          <PrimaryButton title={updateCheckBusy ? "Проверка обновлений…" : "Проверить обновления"} onPress={() => checkUpdates(true)} loading={updateCheckBusy || updateDownloading} />
           <Text style={styles.settingsVersion}>версия {APP_VERSION}</Text>
         </View>}
         {settingsSection === "restaurants" && <View style={styles.flex}>
@@ -912,6 +982,14 @@ export default function HomeScreen() {
         </View></View>
       </KeyboardAvoidingView></Modal>
 
+      <Modal transparent visible={updateDownloading} animationType="fade" onRequestClose={() => {}}>
+        <View style={styles.dialogBackdrop}><View style={styles.dialogCard}>
+          <Text style={styles.dialogTitle}>Загрузка обновления</Text>
+          <ActivityIndicator style={{ marginTop: 18 }} color="#F4C35A" />
+          <Text style={styles.updateProgress}>{updatePercent}%</Text>
+          <Text style={styles.dialogMessage}>Проверяем загруженный APK. После загрузки откроется системный установщик Android.</Text>
+        </View></View>
+      </Modal>
       <Modal transparent visible={dialog !== null} animationType="fade" onRequestClose={() => setDialog(null)}>
         <Pressable style={styles.dialogBackdrop} onPress={() => setDialog(null)}><Pressable style={styles.dialogCard} onPress={() => {}}>
           <View style={styles.dialogHeader}><Text style={styles.dialogTitle}>{dialog?.title}</Text><Pressable style={styles.dialogClose} onPress={() => setDialog(null)}><Text style={styles.dialogCloseText}>×</Text></Pressable></View>
@@ -1009,6 +1087,7 @@ const styles = StyleSheet.create({
   historyCardTitle: { color: "#F4C35A", fontSize: 14, fontWeight: "900" }, historyCardSubtitle: { color: "#F5F7F5", fontSize: 12, fontWeight: "800", marginTop: 3 }, historyCardLine: { color: "#B8C7BE", fontSize: 12, lineHeight: 16, marginTop: 1 }, historyEmpty: { color: "#B8C7BE", fontSize: 13, lineHeight: 19 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.76)", justifyContent: "flex-end" }, sheet: { backgroundColor: "#102019", padding: 20, borderTopLeftRadius: 26, borderTopRightRadius: 26, gap: 11, borderTopWidth: 1, borderColor: "#355541" }, sheetTitle: { color: "#F4C35A", fontSize: 20, fontWeight: "900" },
   dialogBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.78)", justifyContent: "center", paddingHorizontal: 24 }, dialogCard: { borderRadius: 20, backgroundColor: "#102019", borderWidth: 1, borderColor: "#355541", padding: 17 },
+  updateProgress: { color: "#F4C35A", fontSize: 22, fontWeight: "900", textAlign: "center", marginTop: 11 },
   dialogHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }, dialogTitle: { color: "#F4C35A", fontSize: 19, fontWeight: "900", flex: 1 }, dialogClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#21372C", alignItems: "center", justifyContent: "center" }, dialogCloseText: { color: "#F4C35A", fontSize: 25, lineHeight: 27 },
   dialogMessage: { color: "#D9E2DC", fontSize: 14, lineHeight: 20, marginTop: 12 }, dialogActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 18 }, dialogButton: { minWidth: 102, minHeight: 42, borderRadius: 12, backgroundColor: "#E6B44B", alignItems: "center", justifyContent: "center", paddingHorizontal: 13 },
   dialogSecondary: { backgroundColor: "#173025", borderWidth: 1, borderColor: "#294536" }, dialogDanger: { backgroundColor: "#32191A", borderWidth: 1, borderColor: "#61302F" }, dialogButtonText: { color: "#172018", fontWeight: "900", fontSize: 13 }, dialogSecondaryText: { color: "#DDE8E1" }, dialogDangerText: { color: "#F2A7A7" },
