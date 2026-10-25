@@ -11,7 +11,8 @@ on:
       - "plugins/with-update-installer.js"
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 jobs:
   validate:
