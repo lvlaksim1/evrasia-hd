@@ -36,15 +36,6 @@ function withUpdateInstallerNative(config) {
     fs.mkdirSync(xmlDir, { recursive: true });
     fs.writeFileSync(path.join(xmlDir, "update_file_paths.xml"), "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<paths xmlns:android=\"http://schemas.android.com/apk/res/android\">\n  <cache-path name=\"updates\" path=\"updates/\" />\n</paths>\n");
     fs.writeFileSync(path.join(dir, "UpdateInstallerModule.kt"), kotlinSource);
-    const nativePackage = path.join(dir, "SmsCodePackage.kt");
-    if (!fs.existsSync(nativePackage)) throw new Error("SmsCodePackage missing; update installer must run after with-sms-code");
-    let source = fs.readFileSync(nativePackage, "utf8");
-    if (!source.includes("UpdateInstallerModule(reactContext)")) {
-      const needle = "AppearanceMediaModule(reactContext))";
-      if (!source.includes(needle)) throw new Error("Native module registration not found");
-      source = source.replace(needle, "AppearanceMediaModule(reactContext), UpdateInstallerModule(reactContext))");
-      fs.writeFileSync(nativePackage, source);
-    }
     return config;
   }]);
 }
