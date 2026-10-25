@@ -9,6 +9,7 @@ on:
       - "app.config.ts"
       - "lib/evrasia-update.ts"
       - "plugins/with-update-installer.js"
+      - ".github/workflows/_release-apk.yml"
 
 permissions:
   contents: write
