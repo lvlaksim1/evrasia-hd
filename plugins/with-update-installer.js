@@ -34,11 +34,7 @@ function withUpdateInstallerNative(config) {
     const xmlDir = path.join(root, "android", "app", "src", "main", "res", "xml");
     fs.mkdirSync(dir, { recursive: true });
     fs.mkdirSync(xmlDir, { recursive: true });
-    fs.writeFileSync(path.join(xmlDir, "update_file_paths.xml"), '<?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-  <cache-path name="updates" path="updates/" />
-</paths>
-');
+    fs.writeFileSync(path.join(xmlDir, "update_file_paths.xml"), "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<paths xmlns:android=\"http://schemas.android.com/apk/res/android\">\n  <cache-path name=\"updates\" path=\"updates/\" />\n</paths>\n");
     fs.writeFileSync(path.join(dir, "UpdateInstallerModule.kt"), kotlinSource);
     const nativePackage = path.join(dir, "SmsCodePackage.kt");
     if (!fs.existsSync(nativePackage)) throw new Error("SmsCodePackage missing; update installer must run after with-sms-code");
