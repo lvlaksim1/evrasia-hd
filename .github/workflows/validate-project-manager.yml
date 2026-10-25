@@ -1,0 +1,70 @@
+name: Validate Project Manager Capsule
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".context/**"
+      - "AGENTS.md"
+      - "AI_CONTEXT.md"
+      - ".github/workflows/validate-project-manager.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-manager:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout authoritative main snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout pinned Project Manager implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lvlaksim1/context-capsule-project-manager
+          ref: 2912687b38e23dcd0b017f336c321a3ae7f39674
+          path: pm-source
+          persist-credentials: false
+
+      - name: Verify provenance binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="$(python3 -c 'import json;print(json.load(open(".context/capsule.json"))["provenance"]["project_manager"]["commit"])')"
+          ACTUAL="$(git -C pm-source rev-parse --verify HEAD)"
+          test "$ACTUAL" = "$EXPECTED"
+          test "$(git rev-parse --verify HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_REF_NAME" = main
+
+      - name: Project Manager validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 pm-source/installer/pmctl.py validate --target .
+
+      - name: Project Manager ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 pm-source/installer/pmctl.py ready --target . --expected-manager-ref "$GITHUB_SHA"
+
+      - name: Project Manager recover
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 pm-source/installer/pmctl.py recover --target . --expected-manager-ref "$GITHUB_SHA" > "$RUNNER_TEMP/project-manager-recovery.md"
+          test -s "$RUNNER_TEMP/project-manager-recovery.md"
+          grep -Fq 'evrasia-hd-main-project-manager' "$RUNNER_TEMP/project-manager-recovery.md"
+          {
+            echo '### Project Manager capsule validation'
+            echo
+            echo '- validate: VALID'
+            echo '- ready: READY'
+            echo '- recover: succeeded'
+            echo "- recovery pack bytes: $(wc -c < "$RUNNER_TEMP/project-manager-recovery.md")"
+          } >> "$GITHUB_STEP_SUMMARY"

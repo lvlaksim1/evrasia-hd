@@ -12,13 +12,16 @@
 
 ## Проектные компоненты
 
-- `app/(tabs)/index.tsx` — основной экран приложения.
-- `app/_layout.tsx` и `app/(tabs)/_layout.tsx` — Expo Router layout.
-- `lib/evrasia-api.ts` — интеграция с API.
-- `lib/evrasia-storage.ts` — локальное хранение состояния.
-- `data/evrasia-seed.ts` — исходные данные приложения.
-- `plugins/with-sms-code.js` — project-specific Expo config plugin.
-- `scripts/patch-draggable-autoscroll.mjs` — детерминированный postinstall patch зависимости.
+- `index.js` — точка входа Expo: регистрирует главный компонент приложения.
+- `App.tsx` — пользовательский интерфейс, многоаккаунтная работа, профили, бонусные карты, история, рестораны и сортировка карточек через React Native PanResponder.
+- `lib/evrasia-api.ts` — запросы к серверу Евразии, вход и обновление токенов, профиль и бонусные операции.
+- `lib/evrasia-storage.ts` — состояние через AsyncStorage и секреты через Expo SecureStore.
+- `data/evrasia-seed.ts` — исходный список ресторанов.
+- `app.config.ts` — Expo-конфигурация Android, параметры архитектуры и APK.
+- `plugins/with-sms-code.js` — собственная интеграция Android для SMS и настройки медиа.
+- `.github/actions/build-apk/action.yml` — проектная подготовка, контроль исходников, Expo prebuild и выпуск неподписанного APK.
+
+Начиная с релиза v7 приложение использует `index.js` → `App.tsx` вместо Expo Router. Исторические пути `app/(tabs)/` и патч зависимости `scripts/patch-draggable-autoscroll.mjs` отсутствуют в текущем дереве и не являются требованиями актуальной сборки.
 
 ## Release boundary
 
@@ -34,9 +37,11 @@ L3 выполняет pnpm/TypeScript/Expo preprocessing, проверяет gen
 
 ## Критические инварианты
 
-- исходный `app/(tabs)/index.tsx` не должен изменяться во время Expo prebuild;
+- исходный `App.tsx` не должен изменяться во время Expo prebuild; контроль SHA-256 выполняется до и после генерации Android-проекта;
 - generated Android project обязан иметь `newArchEnabled=true`, `reactNativeArchitectures=arm64-v8a` и `adjustResize`;
-- обязательный patch `EVRASIA_DIRECTIONAL_AUTOSCROLL` должен присутствовать после установки зависимостей;
+- перед сборкой восстанавливается `assets/icon.png` из `assets/icon.png.b64`, проверяется наличие медиа и контрольные суммы текущего логотипа и видео;
+- после Expo prebuild повторно выполняется проверка TypeScript;
+- из generated Android release-конфигурации удаляется отладочная подпись до создания неподписанного APK;
 - L3 возвращает только unsigned APK;
 - production signing выполняется только L2;
 - project-specific проверки не переносятся в universal L1/L2.
