@@ -1,6 +1,28 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v17-START -->
+## v17 — 2026-10-26T01:14:19Z
+
+- Release commit: `46a91d10fe6720eb72af960a67bb54e2e0fe5332`
+- Artifact: `evrasia-hd-v17.apk`
+- SHA-256: `d2c5d2ad44fa4a858e81b955bde67646cf5a7953fadeeaf62c8da4ed0a531210`
+- Previous release: **v16**
+
+### Changes
+
+- Record v16 browser OTP release and pending device acceptance
+- Move browser TOTP to account login; persist isolated sessions; selectable browser PIN
+- Remove temporary v17 Android validation workflow after successful build
+- v17: браузерная сессия при входе и выбор способа получения PIN [release]
+
+### Changed files
+
+- `App.tsx`
+- `docs/browser-otp-login.md`
+- `lib/evrasia-api.ts`
+- `plugins/with-sms-code.js`
+<!-- AUTO-CHANGELOG-v17-END -->
 <!-- AUTO-CHANGELOG-v15-START -->
 ## v15 — 2026-10-26T00:09:49Z
 
