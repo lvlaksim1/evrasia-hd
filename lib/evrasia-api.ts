@@ -250,8 +250,9 @@ function browserReauthRequired(): ApiError {
   return new ApiError("Не удалось восстановить браузерную сессию. Выполните повторную авторизацию аккаунта.", 401, "auth");
 }
 
-function browserRequestError(body: string, status: number): ApiError {
-  return new ApiError(serverMessage(body) || `Ошибка браузерного API: HTTP ${status}`, status, errorKind(status));
+function browserRequestError(_body: string, status: number): ApiError {
+  // Never include an HTML page, cookie, CSRF value or session key in the journal.
+  return new ApiError(`Ошибка проверки браузерной сессии (HTTP ${status}). Повторите попытку позднее.`, status, errorKind(status));
 }
 
 async function recoverBrowserSession(account: string): Promise<string> {
