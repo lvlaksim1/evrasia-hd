@@ -1,9 +1,9 @@
 # Текущее состояние
 
-Канонический проект: `lvlaksim1/evrasia-hd@main`. Основной выпуск — **v14**, `evrasia-hd-v14.apk`, пакет `com.evrasia.hd`. Владелец 26.10.2026 сообщил, что установленная v14 корректно работает на телефоне (source: owner-report; authority: owner-directive).
+Канонический репозиторий: `lvlaksim1/evrasia-hd@main`, единственная ветка `main`. Опубликован **релиз v15** для Android, пакет `com.evrasia.hd`, файл `evrasia-hd-v15.apk`, размер 8432005 байт, SHA-256 `7d9694ab392e414fbfde997e075f48824136317305b66476f303c54d30bb88ae`. Выпуск построен на коммите `4c11bc035e86e9274f13057824a4dd5786c09926` (source: https://github.com/lvlaksim1/evrasia-hd/releases/tag/v15, https://github.com/lvlaksim1/evrasia-hd/actions/runs/40247536808; authority: verified-ci).
 
-Документация `README.md` и `ARCHITECTURE.md` приведена к `index.js` → `App.tsx` и текущему процессу сборки. Код приложения и APK не изменены.
+Функции v15: фоновая проверка нового релиза при запуске с предложением обновиться, немедленная загрузка по кнопке в настройках, прогресс, проверка SHA-256 и системная установка Android. Полная проверочная сборка успешна (https://github.com/lvlaksim1/evrasia-hd/actions/runs/40246881505); выпускная сборка, подпись, публикация и проверка полученного APK успешны (https://github.com/lvlaksim1/evrasia-hd/actions/runs/40247536808).
 
-Создана отдельная GitHub Actions проверка восстановления менеджера. Её первый запуск для коммита `a6e0cac904d9fe7ad44a0f498cdeb5aefed92f01` завершился успешно: `pmctl validate`, `pmctl ready`, `pmctl recover` выполнены в authoritative checkout с закреплённым исходным компонентом; source: https://github.com/lvlaksim1/evrasia-hd/actions/runs/40237537909; authority: verified-ci. Менеджер продолжает работу исключительно с основным репозиторием.
+Владелец подтвердил работоспособность установленной **v14** на телефоне 26.10.2026. Работоспособность **v15 на телефоне пока не подтверждена**. Первая установка v15 поверх v14 должна выполняться вручную, поскольку в v14 нет механизма обновления. Сценарии обновления при наличии v16 и выше требуют отдельной фактической приёмки.
 
-26 октября 2026 г. по прямому поручению владельца удалены все 14 дополнительных веток (включая эксперименты размера APK и Dependabot); после операции в GitHub подтверждена единственная ветка `main` (source: GitHub branches API и https://github.com/lvlaksim1/evrasia-hd/actions/runs/40241463380; authority: owner-directive + verified-ci). PR Dependabot № 5 закрыт без объединения; основной код и выпуск v14 не менялись.
+Техническая документация: `docs/updates.md`; временный сценарий проверочной сборки удалён. Dependabot отключён, экспериментальные ветки удалены. Контекст Project Manager сохраняется в каноническом репозитории.
