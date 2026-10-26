@@ -177,10 +177,15 @@ function extractBitrixSessid(html: string) {
   return "";
 }
 
-type BrowserState = { version: 2; cookies: string; authenticated: boolean };
+function extractBitrixRefreshKey(html: string): string {
+  const match = html.match(/\bbxSession\s*\.\s*Expand\s*\(\s*["']([a-f0-9]{32}\.[a-f0-9]{64})["']\s*\)/i);
+  return match?.[1] || "";
+}
+
+type BrowserState = { version: 2; cookies: string; authenticated: boolean; refreshKey?: string; csrf?: string };
 type BrowserResponse = { status: number; body: string; cookies: string };
 const BrowserSessionNative = NativeModules.BrowserSession as {
-  request: (path: string, method: string, headers: Record<string,string>, body: string, cookies: string) => Promise<BrowserResponse>
+  request: (path: string, method: string, headers: Record<string,string>, body: string, cookies: string, omitPhpSession: boolean) => Promise<BrowserResponse>
 } | undefined;
 const sessionQueue = new Map<string, Promise<unknown>>();
 
@@ -188,7 +193,11 @@ function parseBrowserState(value: string | null): BrowserState {
   try {
     const obj = value ? JSON.parse(value) : null;
     if (obj?.version === 2 && typeof obj.cookies === "string") {
-      return { version: 2, cookies: obj.cookies, authenticated: obj.authenticated === true };
+      return {
+        version: 2, cookies: obj.cookies, authenticated: obj.authenticated === true,
+        refreshKey: typeof obj.refreshKey === "string" && /^[a-f0-9]{32}\.[a-f0-9]{64}$/i.test(obj.refreshKey) ? obj.refreshKey : undefined,
+        csrf: typeof obj.csrf === "string" && /^[a-z0-9]{16,64}$/i.test(obj.csrf) ? obj.csrf : undefined,
+      };
     }
   } catch {}
   return { version: 2, cookies: "[]", authenticated: false };
@@ -206,7 +215,7 @@ function encodeForm(values: Record<string,string>) {
   return Object.entries(values).map(([key,value]) =>
     encodeURIComponent(key).replace(/%20/g,"+")+"="+encodeURIComponent(value).replace(/%20/g,"+")).join("&");
 }
-async function commonRequest(account: string, path: string, init: RequestInit = {}) {
+async function commonRequest(account: string, path: string, init: RequestInit = {}, omitPhpSession = false) {
   if (!BrowserSessionNative) throw new ApiError("Модуль браузерных сессий недоступен. Обновите приложение.",0,"invalid");
   const previous = sessionQueue.get(account);
   const operation = (previous ? previous.catch(()=>{}) : Promise.resolve()).then(async () => {
@@ -214,16 +223,108 @@ async function commonRequest(account: string, path: string, init: RequestInit = 
     let result: BrowserResponse;
     try {
       result = await BrowserSessionNative.request(path, init.method || "GET",
-        (init.headers || {}) as Record<string,string>, typeof init.body === "string" ? init.body : "", session.cookies);
+        (init.headers || {}) as Record<string,string>, typeof init.body === "string" ? init.body : "", session.cookies, omitPhpSession);
     } catch (error) {
       throw new ApiError("Ошибка соединения с браузерным API: " + friendlyApiError(error), 0, "offline");
     }
     if (typeof result?.body !== "string" || typeof result?.cookies !== "string") throw new ApiError("Некорректный ответ браузерного API.",0,"invalid");
-    await saveWebSession(account, JSON.stringify({ ...session, cookies: result.cookies }));
+    const isAccountPage = path.startsWith("/account/") && result.status >= 200 && result.status < 300 &&
+      !looksLikeSignin(result.body);
+    const refreshKey = isAccountPage ? extractBitrixRefreshKey(result.body) : "";
+    const csrf = isAccountPage ? extractBitrixSessid(result.body) : "";
+    await saveWebSession(account, JSON.stringify({
+      ...session, cookies: result.cookies,
+      refreshKey: refreshKey || session.refreshKey,
+      csrf: csrf || session.csrf,
+    }));
     return { response: { status: result.status, ok: result.status>=200 && result.status<300 }, body: result.body };
   });
   sessionQueue.set(account, operation);
   try { return await operation; } finally { if (sessionQueue.get(account) === operation) sessionQueue.delete(account); }
+}
+
+// Requests are performed only for a protected feature; no background polling.
+const browserRecoveryQueue = new Map<string, Promise<string>>();
+
+function browserReauthRequired(): ApiError {
+  return new ApiError("Не удалось восстановить браузерную сессию. Выполните повторную авторизацию аккаунта.", 401, "auth");
+}
+
+function browserRequestError(body: string, status: number): ApiError {
+  return new ApiError(serverMessage(body) || `Ошибка браузерного API: HTTP ${status}`, status, errorKind(status));
+}
+
+async function recoverBrowserSession(account: string): Promise<string> {
+  const existing = browserRecoveryQueue.get(account);
+  if (existing) return existing;
+  const task = (async () => {
+    const state = await readBrowserState(account);
+    if (!state.refreshKey || !state.csrf) {
+      await expireCommonSession(account);
+      throw browserReauthRequired();
+    }
+    // The captured Bitrix request omitted PHPSESSID but retained long-lived cookies.
+    // Omit it only for this renewal attempt; apply every new Set-Cookie in the native jar.
+    const refreshed = await commonRequest(account,
+      `/bitrix/tools/public_session.php?k=${encodeURIComponent(state.refreshKey)}`, {
+        headers: {
+          Accept: "text/html, */*",
+          "Bx-ajax": "true",
+          "X-Bitrix-Csrf-Token": state.csrf,
+          "X-Requested-With": "XMLHttpRequest",
+          Referer: `${EVRASIA_COMMON_URL}/account/`,
+        },
+      }, true);
+    if (!refreshed.response.ok) {
+      if (refreshed.response.status >= 500) throw browserRequestError(refreshed.body, refreshed.response.status);
+      await expireCommonSession(account);
+      throw browserReauthRequired();
+    }
+    const outcome = refreshed.body.trim();
+    if (outcome !== "SESSION_CHANGED") {
+      // SESSION_EXPIRED, unexpected content and an inconclusive HTTP 200
+      // are not proof of authentication.
+      await expireCommonSession(account);
+      throw browserReauthRequired();
+    }
+    const probe = await commonRequest(account, "/account/", {
+      headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` },
+    });
+    if (!probe.response.ok) {
+      if (probe.response.status >= 500) throw browserRequestError(probe.body, probe.response.status);
+      await expireCommonSession(account);
+      throw browserReauthRequired();
+    }
+    if (looksLikeSignin(probe.body)) {
+      await expireCommonSession(account);
+      throw browserReauthRequired();
+    }
+    const updated = await readBrowserState(account);
+    await saveWebSession(account, JSON.stringify({ ...updated, authenticated: true }));
+    return probe.body;
+  })();
+  browserRecoveryQueue.set(account, task);
+  try { return await task; }
+  finally { if (browserRecoveryQueue.get(account) === task) browserRecoveryQueue.delete(account); }
+}
+
+async function verifiedBrowserAccountPage(account: string): Promise<string> {
+  const state = await readBrowserState(account);
+  if (!state.authenticated) {
+    // Previously expired browser sessions may still retain recoverable cookies
+    // and a verified key from the last authenticated account page.
+    if (!state.refreshKey || !state.csrf) throw browserReauthRequired();
+    return recoverBrowserSession(account);
+  }
+  const result = await commonRequest(account, "/account/", {
+    headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` },
+  });
+  if (result.response.ok && !looksLikeSignin(result.body)) return result.body;
+  if (result.response.status >= 500) throw browserRequestError(result.body, result.response.status);
+  if (result.response.status === 401 || result.response.status === 403 || looksLikeSignin(result.body)) {
+    return recoverBrowserSession(account);
+  }
+  throw browserRequestError(result.body, result.response.status);
 }
 
 export type CommonOtpRequest = (errorMessage?: string) => Promise<string>;
@@ -350,7 +451,7 @@ function extractCardCids(html: string) {
 }
 
 export async function getCommonCardCids(account: string): Promise<number[]> {
-  await requireCommonSession(account);
+  const accountHtml = await verifiedBrowserAccountPage(account);
   const cards = await commonRequest(account, "/local/php_interface/account.php", {
     method: "POST",
     headers: {
@@ -366,14 +467,7 @@ export async function getCommonCardCids(account: string): Promise<number[]> {
   }
 
   let cids = extractCardCids(cards.body);
-  if (!cids.length) {
-    const page = await commonRequest(account, "/account/", { headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` } });
-    if (!page.response.ok || looksLikeSignin(page.body)) {
-      await expireCommonSession(account);
-      throw new ApiError("Браузерная сессия истекла. Выполните повторную авторизацию аккаунта.", 401, "auth");
-    }
-    cids = extractCardCids(page.body);
-  }
+  if (!cids.length) cids = extractCardCids(accountHtml);
   if (!cids.length) throw new ApiError("Общее API не вернуло cid карт.", 0, "invalid");
   return cids;
 }
@@ -385,7 +479,6 @@ function prepareHistoryHtml(html: string) {
 }
 
 export async function getCommonHistory(account: string): Promise<CommonHistory> {
-  await requireCommonSession(account);
   const cardCids = await getCommonCardCids(account);
   const update = await commonRequest(account, "/api/v2/history/update", {
     method: "POST",
@@ -409,15 +502,9 @@ export async function getCommonHistory(account: string): Promise<CommonHistory> 
 }
 
 export async function getCommonWriteOffCode(account: string): Promise<string> {
-  await requireCommonSession(account);
-  const page = await commonRequest(account, "/account/", {
-    headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` },
-  });
-  if (!page.response.ok || looksLikeSignin(page.body)) {
-    await expireCommonSession(account);
-    throw new ApiError("Браузерная сессия истекла. Выполните повторную авторизацию аккаунта.", 401, "auth");
-  }
-  const sessid = extractBitrixSessid(page.body);
+  // Recovery and validation precede the PIN request. Never automatically resend it.
+  const accountHtml = await verifiedBrowserAccountPage(account);
+  const sessid = extractBitrixSessid(accountHtml);
   if (!sessid) throw new ApiError("Не найден Bitrix sessid для запроса кода.", 0, "invalid");
   const answer = await commonRequest(account, "/local/php_interface/pincode.php", {
     method: "POST",
