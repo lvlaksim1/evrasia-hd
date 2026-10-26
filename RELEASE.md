@@ -5,11 +5,11 @@
 <!-- AUTO-RELEASE-START -->
 ## Последний проверенный релиз
 
-- Релиз: **v14**
-- Релизный commit: `92f6ba606bf1069c5128d91739df4b075fd413cf`
-- Артефакт: `evrasia-hd-v14.apk`
-- SHA-256: `a4a56e10bdc0d44cd144c39a8e29a3a694bfcd8959c5170364d2d787d4add09f`
-- Опубликован: `2026-09-10T23:25:14Z`
+- Релиз: **v15**
+- Релизный commit: `4c11bc035e86e9274f13057824a4dd5786c09926`
+- Артефакт: `evrasia-hd-v15.apk`
+- SHA-256: `7d9694ab392e414fbfde997e075f48824136317305b66476f303c54d30bb88ae`
+- Опубликован: `2026-10-26T00:09:49Z`
 <!-- AUTO-RELEASE-END -->
 
 ## L1 — Universal Release Core
