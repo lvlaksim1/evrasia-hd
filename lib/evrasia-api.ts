@@ -1,3 +1,6 @@
+import { NativeModules } from "react-native";
+import { loadWebSession, saveWebSession } from "@/lib/evrasia-storage";
+
 export const EVRASIA_BASE_URL = "https://evrasia.spb.ru/api/v3";
 export const EVRASIA_COMMON_URL = "https://evrasia.rest";
 
@@ -174,10 +177,53 @@ function extractBitrixSessid(html: string) {
   return "";
 }
 
-async function commonRequest(path: string, init: RequestInit = {}) {
-  const response = await request(`${EVRASIA_COMMON_URL}${path}`, { ...init, credentials: "include" }, 30000);
-  const body = await response.text();
-  return { response, body };
+type BrowserState = { version: 2; cookies: string; authenticated: boolean };
+type BrowserResponse = { status: number; body: string; cookies: string };
+const BrowserSessionNative = NativeModules.BrowserSession as {
+  request: (path: string, method: string, headers: Record<string,string>, body: string, cookies: string) => Promise<BrowserResponse>
+} | undefined;
+const sessionQueue = new Map<string, Promise<unknown>>();
+
+function parseBrowserState(value: string | null): BrowserState {
+  try {
+    const obj = value ? JSON.parse(value) : null;
+    if (obj?.version === 2 && typeof obj.cookies === "string") {
+      return { version: 2, cookies: obj.cookies, authenticated: obj.authenticated === true };
+    }
+  } catch {}
+  return { version: 2, cookies: "[]", authenticated: false };
+}
+async function readBrowserState(account: string) { return parseBrowserState(await loadWebSession(account)); }
+export async function hasCommonSession(account: string) { return (await readBrowserState(account)).authenticated; }
+async function requireCommonSession(account: string) {
+  if (!(await hasCommonSession(account))) throw new ApiError("Браузерная сессия отсутствует. Выполните повторную авторизацию аккаунта.", 401, "auth");
+}
+async function expireCommonSession(account: string) {
+  const session = await readBrowserState(account);
+  await saveWebSession(account, JSON.stringify({ ...session, authenticated: false }));
+}
+function encodeForm(values: Record<string,string>) {
+  return Object.entries(values).map(([key,value]) =>
+    encodeURIComponent(key).replace(/%20/g,"+")+"="+encodeURIComponent(value).replace(/%20/g,"+")).join("&");
+}
+async function commonRequest(account: string, path: string, init: RequestInit = {}) {
+  if (!BrowserSessionNative) throw new ApiError("Модуль браузерных сессий недоступен. Обновите приложение.",0,"invalid");
+  const previous = sessionQueue.get(account);
+  const operation = (previous ? previous.catch(()=>{}) : Promise.resolve()).then(async () => {
+    const session = await readBrowserState(account);
+    let result: BrowserResponse;
+    try {
+      result = await BrowserSessionNative.request(path, init.method || "GET",
+        (init.headers || {}) as Record<string,string>, typeof init.body === "string" ? init.body : "", session.cookies);
+    } catch (error) {
+      throw new ApiError("Ошибка соединения с браузерным API: " + friendlyApiError(error), 0, "offline");
+    }
+    if (typeof result?.body !== "string" || typeof result?.cookies !== "string") throw new ApiError("Некорректный ответ браузерного API.",0,"invalid");
+    await saveWebSession(account, JSON.stringify({ ...session, cookies: result.cookies }));
+    return { response: { status: result.status, ok: result.status>=200 && result.status<300 }, body: result.body };
+  });
+  sessionQueue.set(account, operation);
+  try { return await operation; } finally { if (sessionQueue.get(account) === operation) sessionQueue.delete(account); }
 }
 
 export type CommonOtpRequest = (errorMessage?: string) => Promise<string>;
@@ -207,7 +253,7 @@ function parseBitrixAuthResponse(body: string): "authenticated" | "otp" {
   throw new ApiError(`Общая авторизация: ${message}`, 401, "auth");
 }
 
-async function confirmBitrixOtp(sessid: string, requestOtp: CommonOtpRequest) {
+async function confirmBitrixOtp(account: string, sessid: string, requestOtp: CommonOtpRequest) {
   let retryMessage: string | undefined;
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = await requestOtp(retryMessage);
@@ -215,12 +261,12 @@ async function confirmBitrixOtp(sessid: string, requestOtp: CommonOtpRequest) {
       retryMessage = "Введите ровно шесть цифр.";
       continue;
     }
-    const data = new FormData();
-    data.append("OTP", code);
-    const action = await commonRequest("/bitrix/services/main/ajax.php?analyticsLabel%5BviewMode%5D=grid&analyticsLabel%5BfilterState%5D=otp&mode=class&c=eurasia%3Asignin&action=otp", {
+    const data = encodeForm({ OTP: code });
+    const action = await commonRequest(account, "/bitrix/services/main/ajax.php?analyticsLabel%5BviewMode%5D=grid&analyticsLabel%5BfilterState%5D=otp&mode=class&c=eurasia%3Asignin&action=otp", {
       method: "POST",
       headers: {
         Accept: "application/json, text/javascript, */*; q=0.01",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "Bx-Ajax": "true",
         "X-Bitrix-Csrf-Token": sessid,
         "X-Bitrix-Site-Id": "s1",
@@ -247,25 +293,21 @@ async function confirmBitrixOtp(sessid: string, requestOtp: CommonOtpRequest) {
   throw new ApiError("Не удалось подтвердить вход. Начните авторизацию заново.", 401, "auth");
 }
 
-export async function commonApiLogin(phone: string, password: string, requestOtp?: CommonOtpRequest): Promise<string> {
-  const first = await commonRequest("/signin/", { method: "GET", headers: { Accept: "text/html" } });
+export async function commonApiLogin(account: string, phone: string, password: string, requestOtp?: CommonOtpRequest): Promise<string> {
+  await saveWebSession(account, JSON.stringify({ version: 2, cookies: "[]", authenticated: false }));
+  const first = await commonRequest(account, "/signin/", { method: "GET", headers: { Accept: "text/html" } });
   if (!first.response.ok) throw new ApiError(`Страница входа: HTTP ${first.response.status}`, first.response.status, errorKind(first.response.status));
   const sessid = extractBitrixSessid(first.body);
   if (!sessid) throw new ApiError("На странице входа не найден Bitrix CSRF-токен.", 0, "auth");
 
-  const data = new FormData();
-  data.append("USER_LOGIN", phone);
-  data.append("USER_PASSWORD", password);
-  data.append("AUTH_FORM", "Y");
-  data.append("TYPE", "AUTH");
-  data.append("BY", "PHONE");
-  data.append("USER_REMEMBER", "Y");
-  data.append("backurl", "/signin/");
+  const data = encodeForm({ USER_LOGIN: phone, USER_PASSWORD: password, AUTH_FORM: "Y",
+    TYPE: "AUTH", BY: "PHONE", USER_REMEMBER: "Y", backurl: "/signin/" });
 
-  const action = await commonRequest("/bitrix/services/main/ajax.php?analyticsLabel%5BviewMode%5D=grid&analyticsLabel%5BfilterState%5D=closed&mode=class&c=eurasia%3Asignin&action=process", {
+  const action = await commonRequest(account, "/bitrix/services/main/ajax.php?analyticsLabel%5BviewMode%5D=grid&analyticsLabel%5BfilterState%5D=closed&mode=class&c=eurasia%3Asignin&action=process", {
     method: "POST",
     headers: {
       Accept: "application/json, text/javascript, */*; q=0.01",
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
       "Bx-Ajax": "true",
       "X-Bitrix-Csrf-Token": sessid,
       "X-Bitrix-Site-Id": "s1",
@@ -279,11 +321,14 @@ export async function commonApiLogin(phone: string, password: string, requestOtp
   const result = parseBitrixAuthResponse(action.body);
   if (result === "otp") {
     if (!requestOtp) throw new ApiError("Требуется шестизначный код приложения-аутентификатора.", 401, "auth");
-    await confirmBitrixOtp(sessid, requestOtp);
+    await confirmBitrixOtp(account, sessid, requestOtp);
   }
 
-  const probe = await commonRequest("/account/", { headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/signin/` } });
+  const probe = await commonRequest(account, "/account/", { headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/signin/` } });
   if (!probe.response.ok || looksLikeSignin(probe.body)) throw new ApiError("Общая авторизация прошла, но личный кабинет не открылся.", 401, "auth");
+  const session = await readBrowserState(account);
+  if (session.cookies === "[]") throw new ApiError("Сервер не выдал cookies браузерной сессии.", 401, "auth");
+  await saveWebSession(account, JSON.stringify({ ...session, authenticated: true }));
   return "browser-cookie-session";
 }
 
@@ -304,8 +349,9 @@ function extractCardCids(html: string) {
   return [...result];
 }
 
-export async function getCommonCardCids(_session?: string): Promise<number[]> {
-  const cards = await commonRequest("/local/php_interface/account.php", {
+export async function getCommonCardCids(account: string): Promise<number[]> {
+  await requireCommonSession(account);
+  const cards = await commonRequest(account, "/local/php_interface/account.php", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -314,13 +360,19 @@ export async function getCommonCardCids(_session?: string): Promise<number[]> {
     },
     body: "type=cards",
   });
-  if (!cards.response.ok || looksLikeSignin(cards.body)) throw new ApiError("Сессия общего API недействительна при запросе карт.", 401, "auth");
+  if (!cards.response.ok || looksLikeSignin(cards.body)) {
+    await expireCommonSession(account);
+    throw new ApiError("Браузерная сессия истекла. Выполните повторную авторизацию аккаунта.", 401, "auth");
+  }
 
   let cids = extractCardCids(cards.body);
   if (!cids.length) {
-    const account = await commonRequest("/account/", { headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` } });
-    if (!account.response.ok || looksLikeSignin(account.body)) throw new ApiError("Сессия общего API недействительна при запросе cid карт.", 401, "auth");
-    cids = extractCardCids(account.body);
+    const page = await commonRequest(account, "/account/", { headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` } });
+    if (!page.response.ok || looksLikeSignin(page.body)) {
+      await expireCommonSession(account);
+      throw new ApiError("Браузерная сессия истекла. Выполните повторную авторизацию аккаунта.", 401, "auth");
+    }
+    cids = extractCardCids(page.body);
   }
   if (!cids.length) throw new ApiError("Общее API не вернуло cid карт.", 0, "invalid");
   return cids;
@@ -332,9 +384,10 @@ function prepareHistoryHtml(html: string) {
     .replace(/(^|>)(\s*\d{2}\.\d{2})(\s*)(?=<|$)/gm, (_all, prefix, date, suffix) => `${prefix}${date}\u200B${suffix}`);
 }
 
-export async function getCommonHistory(_session?: string): Promise<CommonHistory> {
-  const cardCids = await getCommonCardCids();
-  const update = await commonRequest("/api/v2/history/update", {
+export async function getCommonHistory(account: string): Promise<CommonHistory> {
+  await requireCommonSession(account);
+  const cardCids = await getCommonCardCids(account);
+  const update = await commonRequest(account, "/api/v2/history/update", {
     method: "POST",
     headers: {
       "Content-Type": "json",
@@ -346,10 +399,47 @@ export async function getCommonHistory(_session?: string): Promise<CommonHistory
   });
   if (!update.response.ok) throw new ApiError(serverMessage(update.body) || `Не удалось актуализировать историю: HTTP ${update.response.status}`, update.response.status, errorKind(update.response.status));
 
-  const account = await commonRequest("/account/", { headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` } });
-  if (!account.response.ok || looksLikeSignin(account.body)) throw new ApiError("Сессия общего API недействительна после обновления истории.", 401, "auth");
-  const historyHtml = account.body.match(/id=["']blockAccountHistory["'][^>]*>([\s\S]*?)(?=<\/section>|<script|<footer)/i)?.[1] || "";
-  return { raw: account.body, historyHtml: prepareHistoryHtml(historyHtml), cardCids };
+  const page = await commonRequest(account, "/account/", { headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` } });
+  if (!page.response.ok || looksLikeSignin(page.body)) {
+    await expireCommonSession(account);
+    throw new ApiError("Браузерная сессия истекла. Выполните повторную авторизацию аккаунта.", 401, "auth");
+  }
+  const historyHtml = page.body.match(/id=["']blockAccountHistory["'][^>]*>([\s\S]*?)(?=<\/section>|<script|<footer)/i)?.[1] || "";
+  return { raw: page.body, historyHtml: prepareHistoryHtml(historyHtml), cardCids };
+}
+
+export async function getCommonWriteOffCode(account: string): Promise<string> {
+  await requireCommonSession(account);
+  const page = await commonRequest(account, "/account/", {
+    headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/account/` },
+  });
+  if (!page.response.ok || looksLikeSignin(page.body)) {
+    await expireCommonSession(account);
+    throw new ApiError("Браузерная сессия истекла. Выполните повторную авторизацию аккаунта.", 401, "auth");
+  }
+  const sessid = extractBitrixSessid(page.body);
+  if (!sessid) throw new ApiError("Не найден Bitrix sessid для запроса кода.", 0, "invalid");
+  const answer = await commonRequest(account, "/local/php_interface/pincode.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "X-Requested-With": "XMLHttpRequest", Referer: `${EVRASIA_COMMON_URL}/account/` },
+    body: encodeForm({ sessid }),
+  });
+  if (!answer.response.ok || looksLikeSignin(answer.body)) {
+    if (answer.response.status === 401 || answer.response.status === 403 || looksLikeSignin(answer.body)) {
+      await expireCommonSession(account);
+      throw new ApiError("Браузерная сессия истекла. Выполните повторную авторизацию аккаунта.", 401, "auth");
+    }
+    throw new ApiError(serverMessage(answer.body) || "Сервер не выдал PIN-код.", answer.response.status, errorKind(answer.response.status));
+  }
+  let result: any;
+  try { result = JSON.parse(answer.body); } catch {
+    throw new ApiError("Сервер вернул некорректный ответ на запрос кода.", 0, "invalid");
+  }
+  if (result?.status !== "success" || !/^\d{4}$/.test(String(result?.pincode ?? ""))) {
+    throw new ApiError(typeof result?.message === "string" ? result.message : "Сервер не вернул четырёхзначный PIN-код.", 0, "invalid");
+  }
+  return String(result.pincode);
 }
 
 export const webLogin = commonApiLogin;

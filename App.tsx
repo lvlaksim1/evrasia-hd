@@ -8,13 +8,13 @@ import * as Clipboard from "expo-clipboard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   commonApiLogin, downloadRestaurants, friendlyApiError, getBonusCardTypes, getCheckin,
-  getCommonCardCids, getCommonHistory, getProfile, getWriteOffCode, isAuthError, login,
+  getCommonCardCids, getCommonHistory, getCommonWriteOffCode, getProfile, getWriteOffCode, isAuthError, login,
   refreshTokens, refreshUser, updateProfile, type BonusCardType, type EditableProfile,
   type ProfileData, type UserCard,
 } from "@/lib/evrasia-api";
 import {
   deleteAccountSecrets, loadAccounts, loadPassword, loadRestaurants, loadTokens,
-  loadWebSession, saveAccounts, savePassword, saveRestaurants, saveTokens, saveWebSession,
+  saveAccounts, savePassword, saveRestaurants, saveTokens,
   type Account,
 } from "@/lib/evrasia-storage";
 import type { Restaurant } from "@/data/evrasia-seed";
@@ -37,6 +37,7 @@ type AppDialog = { title: string; message?: string; actions: DialogAction[] } | 
 type HistoryEntry = { title: string; lines: string[]; timestamp: number };
 type ActionLogEntry = { id: string; timestamp: number; message: string };
 const ACTION_LOG_KEY = "@evrasia/actionLog";
+const WRITE_OFF_METHOD_KEY = "@evrasia/writeOffMethod";
 const ACTION_LOG_LIMIT = 500;
 
 function normalizePhone(value: string) {
@@ -324,6 +325,7 @@ export default function HomeScreen() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [writeOffMethod, setWriteOffMethod] = useState<"mobile" | "browser">("mobile");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("root");
   const [loginVisible, setLoginVisible] = useState(false);
   const [password, setPassword] = useState("");
@@ -370,9 +372,10 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([loadAccounts(), loadRestaurants(), AppearanceMedia?.getSettings?.(), AsyncStorage.getItem("@evrasia/logoUri"), AsyncStorage.getItem(ACTION_LOG_KEY)]).then(([a, r, savedAppearance, savedLogoUri, savedLog]) => {
+    Promise.all([loadAccounts(), loadRestaurants(), AppearanceMedia?.getSettings?.(), AsyncStorage.getItem("@evrasia/logoUri"), AsyncStorage.getItem(ACTION_LOG_KEY), AsyncStorage.getItem(WRITE_OFF_METHOD_KEY)]).then(([a, r, savedAppearance, savedLogoUri, savedLog, savedWriteOffMethod]) => {
       if (!alive) return;
       setAccounts(a); setRestaurants(sortRestaurants(r));
+      setWriteOffMethod(savedWriteOffMethod === "browser" ? "browser" : "mobile");
       if (savedAppearance || savedLogoUri) setAppearance({ logoUri: savedLogoUri || savedAppearance?.logoUri || "", videoUri: savedAppearance?.videoUri || "", iconUri: savedAppearance?.iconUri || "" });
       let parsedLog: ActionLogEntry[] = [];
       try {
@@ -593,44 +596,38 @@ export default function HomeScreen() {
     appendLog(`Авторизация ${account.phone}: исходный запрос успешно повторён после полного входа`);
     return result;
   }
-  function getFreshCommonSession(account: Account): Promise<string> {
+  function authorizeBrowser(phone: string, accountPassword: string): Promise<string> {
     const active = commonLoginRef.current;
     if (active) {
-      if (active.phone === account.phone) return active.task;
+      if (active.phone === phone) return active.task;
       return Promise.reject(new Error("Сначала завершите подтверждение входа в предыдущий аккаунт."));
     }
     const task = (async () => {
-      const savedPassword = await loadPassword(account.phone);
-      if (!savedPassword) throw new Error("Для браузерного API нужен сохранённый пароль. Выполните вход в аккаунт ещё раз.");
-      appendLog(`Браузерный API ${account.phone}: выполняется вход по сохранённому паролю`);
+      appendLog(`Браузерный API ${phone}: авторизация при входе в аккаунт`);
       try {
-        const session = await commonApiLogin(commonApiPhone(account.phone), savedPassword, message => {
-          appendLog(`Браузерный API ${account.phone}: запрошен дополнительный код подтверждения`);
+        const result = await commonApiLogin(phone, commonApiPhone(phone), accountPassword, message => {
+          appendLog(`Браузерный API ${phone}: требуется дополнительное подтверждение`);
           return requestCommonOtp(message);
         });
-        await saveWebSession(account.phone, session);
-        appendLog(`Браузерный API ${account.phone}: вход подтверждён, web-сессия получена`);
-        return session;
+        appendLog(`Браузерный API ${phone}: браузерная сессия подтверждена и сохранена`);
+        return result;
       } catch (error) {
-        appendLog(`Браузерный API ${account.phone}: вход не выполнен · ${friendlyApiError(error)}`);
+        appendLog(`Браузерный API ${phone}: вход не выполнен · ${friendlyApiError(error)}`);
         throw error;
       }
     })();
-    commonLoginRef.current = { phone: account.phone, task };
+    commonLoginRef.current = { phone, task };
     void task.finally(() => {
       if (commonLoginRef.current?.task === task) commonLoginRef.current = null;
     }).catch(() => {});
     return task;
   }
+
   async function commonCids(account: Account) {
-    const saved = await loadWebSession(account.phone);
-    if (saved) { try { return await getCommonCardCids(saved); } catch (e) { if (!isAuthError(e)) throw e; } }
-    return getCommonCardCids(await getFreshCommonSession(account));
+    return getCommonCardCids(account.phone);
   }
   async function commonHistory(account: Account) {
-    const saved = await loadWebSession(account.phone);
-    if (saved) { try { return await getCommonHistory(saved); } catch (e) { if (!isAuthError(e)) throw e; } }
-    return getCommonHistory(await getFreshCommonSession(account));
+    return getCommonHistory(account.phone);
   }
 
   async function doLogin() {
@@ -639,10 +636,12 @@ export default function HomeScreen() {
     try {
       setBusyPhone(selectedAccount.phone);
       const tokens = await login(mobilePhone(selectedAccount.phone), password);
+      setLoginVisible(false);
+      await authorizeBrowser(selectedAccount.phone, password);
       await Promise.all([saveTokens(selectedAccount.phone, tokens), savePassword(selectedAccount.phone, password)]);
-      appendLog(`Авторизация ${selectedAccount.phone}: ручной вход выполнен`);
-      setLoginVisible(false); setPassword(""); await refreshAccount(selectedAccount);
-    } catch (e) { appendLog(`Авторизация ${selectedAccount.phone}: ручной вход не выполнен · ${friendlyApiError(e)}`); setLoginError(friendlyApiError(e)); } finally { setBusyPhone(""); }
+      appendLog(`Авторизация ${selectedAccount.phone}: оба способа входа подтверждены`);
+      setPassword(""); await refreshAccount(selectedAccount);
+    } catch (e) { appendLog(`Авторизация ${selectedAccount.phone}: ручной вход не выполнен · ${friendlyApiError(e)}`); setLoginError(friendlyApiError(e)); setLoginVisible(true); } finally { setBusyPhone(""); }
   }
   async function addAccount() {
     const phone = normalizePhone(newPhone);
@@ -654,12 +653,14 @@ export default function HomeScreen() {
     try {
       const tokens = await login(mobilePhone(phone), newPassword);
       const data = await refreshUser(tokens.access_token);
+      setAddVisible(false);
+      await authorizeBrowser(phone, newPassword);
       const account: Account = { phone, bonusPoints: data.bonusPoints, bonusPercent: data.bonusAccrualPercentage, totalSpent: data.overallPayedOrderSum, lastUpdated: new Date().toLocaleString("ru-RU") };
       const next = [...accounts, account];
       await Promise.all([saveTokens(phone, tokens), savePassword(phone, newPassword), saveAccounts(next)]);
       setAccounts(next); setAddVisible(false); setNewPhone(""); setNewPassword("");
       appendLog(`Аккаунт ${phone}: успешно добавлен`);
-    } catch (e) { appendLog(`Аккаунт ${phone}: не удалось добавить · ${friendlyApiError(e)}`); setAddError(friendlyApiError(e)); } finally { setAddingAccount(false); }
+    } catch (e) { appendLog(`Аккаунт ${phone}: не удалось добавить · ${friendlyApiError(e)}`); setAddError(friendlyApiError(e)); setAddVisible(true); } finally { setAddingAccount(false); }
   }
   async function refreshAccount(account: Account) {
     appendLog(`Аккаунт ${account.phone}: обновление данных`);
@@ -705,15 +706,25 @@ export default function HomeScreen() {
     } catch (e: any) { if (e?.message !== "AUTH_REQUIRED") { appendLog(`Чекин ${account.phone}: ошибка · ${friendlyApiError(e)}`); showMessage("Ошибка чекина", friendlyApiError(e)); } } finally { setBusyPhone(""); }
   }
   async function requestWriteOff(account: Account) {
-    appendLog(`Код списания ${account.phone}: запрос начат`);
+    appendLog(`Код списания ${account.phone}: способ ${writeOffMethod === "browser" ? "браузерный" : "мобильный"}`);
     try {
       setBusyPhone(account.phone);
-      const allowed = await SmsCode?.ensurePermission?.();
-      if (!allowed) { appendLog(`Код списания ${account.phone}: нет разрешения на SMS`); showMessage("Доступ к SMS", "Разрешите приложению получать SMS для автоматического перехвата 4-значного кода."); return; }
-      await SmsCode.startWaiting(account.lastCheckinCode || "");
-      await withAuth(account, token => getWriteOffCode(token));
-      appendLog(`Код списания ${account.phone}: запрос отправлен, ожидается SMS`);
-      showMessage("Ожидаем SMS", "После получения кода в буфер обмена автоматически попадёт строка с чекином и кодом списания.");
+      if (writeOffMethod === "browser") {
+        const code = await getCommonWriteOffCode(account.phone);
+        const clipboardText = `чекин: ${account.lastCheckinCode || ""}, на списание: ${code}`;
+        await Clipboard.setStringAsync(clipboardText);
+        appendLog(`Код списания ${account.phone}: получен через браузерный API и скопирован`);
+        // PIN is intentionally excluded from the persistent action log.
+        setDialog({ title: "Код списания", message: `PIN: ${code}\n\n${clipboardText}\n\nСкопировано в буфер обмена.`,
+          actions: [{ label: "Понятно" }] });
+      } else {
+        const allowed = await SmsCode?.ensurePermission?.();
+        if (!allowed) { appendLog(`Код списания ${account.phone}: нет разрешения на SMS`); showMessage("Доступ к SMS", "Разрешите приложению получать SMS для автоматического перехвата 4-значного кода."); return; }
+        await SmsCode.startWaiting(account.lastCheckinCode || "");
+        await withAuth(account, token => getWriteOffCode(token));
+        appendLog(`Код списания ${account.phone}: запрос отправлен, ожидается SMS`);
+        showMessage("Ожидаем SMS", "После получения кода в буфер обмена автоматически попадёт строка с чекином и кодом списания.");
+      }
     } catch (e: any) {
       if (e?.message !== "AUTH_REQUIRED") { appendLog(`Код списания ${account.phone}: ошибка · ${friendlyApiError(e)}`); showMessage("Не удалось запросить код списания", friendlyApiError(e)); }
     } finally { setBusyPhone(""); }
@@ -915,6 +926,17 @@ export default function HomeScreen() {
           <SettingsRow title="Типы карт" onPress={openCardTypes} />
           <SettingsRow title="Оформление" onPress={() => setSettingsSection("appearance")} />
           <SettingsRow title="Журнал действий" onPress={() => setSettingsSection("log")} />
+          <Text style={styles.appearanceTitle}>Способ получения кода списания</Text>
+          <View style={styles.genderRow}>
+            <ChoiceButton title="Мобильный API" active={writeOffMethod === "mobile"} onPress={() => {
+              setWriteOffMethod("mobile");
+              void AsyncStorage.setItem(WRITE_OFF_METHOD_KEY, "mobile").catch(e => showMessage("Настройки", friendlyApiError(e)));
+            }} />
+            <ChoiceButton title="Браузерный API" active={writeOffMethod === "browser"} onPress={() => {
+              setWriteOffMethod("browser");
+              void AsyncStorage.setItem(WRITE_OFF_METHOD_KEY, "browser").catch(e => showMessage("Настройки", friendlyApiError(e)));
+            }} />
+          </View>
           <PrimaryButton title={updateCheckBusy ? "Проверка обновлений…" : "Проверить обновления"} onPress={() => checkUpdates(true)} loading={updateCheckBusy || updateDownloading} />
           <Text style={styles.settingsVersion}>версия {APP_VERSION}</Text>
         </View>}
