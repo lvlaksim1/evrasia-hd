@@ -1,6 +1,35 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v16-START -->
+## v16 — 2026-10-26T00:38:57Z
+
+- Release commit: `f622da47e4b875bcd918ac4d02eefdea47150ec8`
+- Artifact: `evrasia-hd-v16.apk`
+- SHA-256: `3a5c09570ad400834de94dcf7647d7e971c5c8d26736ab10adfb85a8bc513c38`
+- Previous release: **v15**
+
+### Changes
+
+- Record verified v15 release and pending device acceptance in Project Manager capsule
+- Support TOTP challenge in browser API login and validate APK
+- Remove temporary browser OTP APK validation workflow after successful build
+- v16: подтверждение браузерного входа шестизначным кодом [release]
+
+### Changed files
+
+- `.context/current/blockers.md`
+- `.context/current/next.md`
+- `.context/current/state.md`
+- `.context/handoffs/latest.md`
+- `.context/manager/beliefs.md`
+- `.context/manager/plans.md`
+- `.context/manager/state-integrity.json`
+- `.context/memory/semantic.md`
+- `App.tsx`
+- `docs/browser-otp-login.md`
+- `lib/evrasia-api.ts`
+<!-- AUTO-CHANGELOG-v16-END -->
 <!-- AUTO-CHANGELOG-v15-START -->
 ## v15 — 2026-10-26T00:09:49Z
 
