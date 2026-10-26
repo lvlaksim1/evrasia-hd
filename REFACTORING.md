@@ -3,20 +3,29 @@
 <!-- AUTO-RELEASE-START -->
 ## Контрольная точка рефакторинга
 
-- Актуально для релиза: **v17**
-- Релизный commit: `46a91d10fe6720eb72af960a67bb54e2e0fe5332`
-- Опубликован: `2026-10-26T01:14:19Z`
+- Актуально для релиза: **v18**
+- Релизный commit: `db7b1d1e52899f38dbe8e7a4e0b4eb863f3ff776`
+- Опубликован: `2026-10-26T02:00:08Z`
 
 ### Изменения между релизами
 
-- Record v16 browser OTP release and pending device acceptance
-- Move browser TOTP to account login; persist isolated sessions; selectable browser PIN
-- Remove temporary v17 Android validation workflow after successful build
-- v17: браузерная сессия при входе и выбор способа получения PIN [release]
+- Persist verified v17 browser login and PIN features with pending device acceptance
+- Add on-demand Bitrix PHP session recovery with per-account cookies
+- Avoid leaking Bitrix session material through recovery error messages
+- Remove temporary Bitrix renewal APK validation workflow after successful build
+- v18: восстановление браузерной PHP-сессии Bitrix без повторного 2FA [release]
 
 ### Изменённые файлы
 
-- `App.tsx`
+- `.context/current/blockers.md`
+- `.context/current/next.md`
+- `.context/current/state.md`
+- `.context/handoffs/latest.md`
+- `.context/manager/beliefs.md`
+- `.context/manager/plans.md`
+- `.context/manager/state-integrity.json`
+- `.context/memory/procedural.md`
+- `.context/memory/semantic.md`
 - `docs/browser-otp-login.md`
 - `lib/evrasia-api.ts`
 - `plugins/with-sms-code.js`

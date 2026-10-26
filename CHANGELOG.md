@@ -1,6 +1,37 @@
 # Changelog
 
 <!-- AUTO-CHANGELOG-INSERT -->
+<!-- AUTO-CHANGELOG-v18-START -->
+## v18 — 2026-10-26T02:00:08Z
+
+- Release commit: `db7b1d1e52899f38dbe8e7a4e0b4eb863f3ff776`
+- Artifact: `evrasia-hd-v18.apk`
+- SHA-256: `dc8819ce79472112038818206119683b2b8755197bff8f1f20d865cc4b9d52dd`
+- Previous release: **v17**
+
+### Changes
+
+- Persist verified v17 browser login and PIN features with pending device acceptance
+- Add on-demand Bitrix PHP session recovery with per-account cookies
+- Avoid leaking Bitrix session material through recovery error messages
+- Remove temporary Bitrix renewal APK validation workflow after successful build
+- v18: восстановление браузерной PHP-сессии Bitrix без повторного 2FA [release]
+
+### Changed files
+
+- `.context/current/blockers.md`
+- `.context/current/next.md`
+- `.context/current/state.md`
+- `.context/handoffs/latest.md`
+- `.context/manager/beliefs.md`
+- `.context/manager/plans.md`
+- `.context/manager/state-integrity.json`
+- `.context/memory/procedural.md`
+- `.context/memory/semantic.md`
+- `docs/browser-otp-login.md`
+- `lib/evrasia-api.ts`
+- `plugins/with-sms-code.js`
+<!-- AUTO-CHANGELOG-v18-END -->
 <!-- AUTO-CHANGELOG-v17-START -->
 ## v17 — 2026-10-26T01:14:19Z
 
