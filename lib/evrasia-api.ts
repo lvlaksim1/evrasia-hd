@@ -180,19 +180,74 @@ async function commonRequest(path: string, init: RequestInit = {}) {
   return { response, body };
 }
 
-function parseBitrixAction(body: string) {
+export type CommonOtpRequest = (errorMessage?: string) => Promise<string>;
+
+function parseBitrixAuthResponse(body: string): "authenticated" | "otp" {
+  let parsed: any;
   try {
-    const parsed = JSON.parse(body);
-    if (parsed?.status === "success" && parsed?.data === true) return;
-    const message = parsed?.errors?.[0]?.message || parsed?.errors?.[0]?.customData || parsed?.status || "неизвестный ответ";
-    throw new ApiError(`Общая авторизация отклонена сервером: ${String(message)}`, 401, "auth");
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
+    parsed = JSON.parse(body);
+  } catch {
     throw new ApiError("Общая авторизация: сервер вернул некорректный ответ Bitrix.", 0, "invalid");
   }
+  if (parsed?.status === "success") {
+    if (parsed.data === true || parsed.data?.authenticated === true) return "authenticated";
+    if (parsed.data?.otpRequired === true) return "otp";
+    if (parsed.data?.emailRequired === true) {
+      throw new ApiError("Сервер запросил подтверждение входа через email; этот способ пока не поддерживается.", 401, "auth");
+    }
+    if (parsed.data?.smsRequired === true) {
+      throw new ApiError("Сервер запросил SMS-подтверждение входа; этот способ пока не поддерживается.", 401, "auth");
+    }
+  }
+  const item = Array.isArray(parsed?.errors) ? parsed.errors[0] : null;
+  const message = typeof item?.message === "string" ? item.message
+    : typeof item?.customData === "string" ? item.customData
+    : typeof parsed?.message === "string" ? parsed.message
+    : "Сервер отклонил попытку авторизации.";
+  throw new ApiError(`Общая авторизация: ${message}`, 401, "auth");
 }
 
-export async function commonApiLogin(phone: string, password: string): Promise<string> {
+async function confirmBitrixOtp(sessid: string, requestOtp: CommonOtpRequest) {
+  let retryMessage: string | undefined;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = await requestOtp(retryMessage);
+    if (!/^\d{6}$/.test(code)) {
+      retryMessage = "Введите ровно шесть цифр.";
+      continue;
+    }
+    const data = new FormData();
+    data.append("OTP", code);
+    const action = await commonRequest("/bitrix/services/main/ajax.php?analyticsLabel%5BviewMode%5D=grid&analyticsLabel%5BfilterState%5D=otp&mode=class&c=eurasia%3Asignin&action=otp", {
+      method: "POST",
+      headers: {
+        Accept: "application/json, text/javascript, */*; q=0.01",
+        "Bx-Ajax": "true",
+        "X-Bitrix-Csrf-Token": sessid,
+        "X-Bitrix-Site-Id": "s1",
+        "X-Requested-With": "XMLHttpRequest",
+        Origin: EVRASIA_COMMON_URL,
+        Referer: `${EVRASIA_COMMON_URL}/signin/`,
+      },
+      body: data,
+    });
+    if (!action.response.ok) {
+      throw new ApiError(serverMessage(action.body) || `Подтверждение входа: HTTP ${action.response.status}`,
+        action.response.status, errorKind(action.response.status));
+    }
+    try {
+      if (parseBitrixAuthResponse(action.body) !== "authenticated") {
+        throw new ApiError("Сервер не подтвердил завершение входа.", 401, "auth");
+      }
+      return;
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.kind !== "auth") throw error;
+      retryMessage = error.message;
+    }
+  }
+  throw new ApiError("Не удалось подтвердить вход. Начните авторизацию заново.", 401, "auth");
+}
+
+export async function commonApiLogin(phone: string, password: string, requestOtp?: CommonOtpRequest): Promise<string> {
   const first = await commonRequest("/signin/", { method: "GET", headers: { Accept: "text/html" } });
   if (!first.response.ok) throw new ApiError(`Страница входа: HTTP ${first.response.status}`, first.response.status, errorKind(first.response.status));
   const sessid = extractBitrixSessid(first.body);
@@ -221,7 +276,11 @@ export async function commonApiLogin(phone: string, password: string): Promise<s
     body: data,
   });
   if (!action.response.ok) throw new ApiError(serverMessage(action.body) || `Общая авторизация: HTTP ${action.response.status}`, action.response.status, errorKind(action.response.status));
-  parseBitrixAction(action.body);
+  const result = parseBitrixAuthResponse(action.body);
+  if (result === "otp") {
+    if (!requestOtp) throw new ApiError("Требуется шестизначный код приложения-аутентификатора.", 401, "auth");
+    await confirmBitrixOtp(sessid, requestOtp);
+  }
 
   const probe = await commonRequest("/account/", { headers: { Accept: "text/html", Referer: `${EVRASIA_COMMON_URL}/signin/` } });
   if (!probe.response.ok || looksLikeSignin(probe.body)) throw new ApiError("Общая авторизация прошла, но личный кабинет не открылся.", 401, "auth");

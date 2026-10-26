@@ -350,6 +350,11 @@ export default function HomeScreen() {
   const [aliasSource, setAliasSource] = useState<Restaurant | null>(null);
   const [aliasTitle, setAliasTitle] = useState("");
   const [dialog, setDialog] = useState<AppDialog>(null);
+  const [commonOtpVisible, setCommonOtpVisible] = useState(false);
+  const [commonOtpCode, setCommonOtpCode] = useState("");
+  const [commonOtpError, setCommonOtpError] = useState("");
+  const pendingOtpRef = useRef<{ resolve: (value: string) => void; reject: (reason: Error) => void } | null>(null);
+  const commonLoginRef = useRef<{ phone: string; task: Promise<string> } | null>(null);
   const [updateCheckBusy, setUpdateCheckBusy] = useState(false);
   const [updateDownloading, setUpdateDownloading] = useState(false);
   const [updatePercent, setUpdatePercent] = useState(0);
@@ -488,6 +493,40 @@ export default function HomeScreen() {
     await logWriteRef.current;
   }
 
+  function requestCommonOtp(errorMessage?: string): Promise<string> {
+    if (pendingOtpRef.current) return Promise.reject(new Error("Окно подтверждения входа уже открыто."));
+    setCommonOtpCode("");
+    setCommonOtpError(errorMessage || "");
+    setCommonOtpVisible(true);
+    return new Promise<string>((resolve, reject) => {
+      pendingOtpRef.current = { resolve, reject };
+    });
+  }
+
+  function submitCommonOtp() {
+    if (!/^\d{6}$/.test(commonOtpCode)) {
+      setCommonOtpError("Введите шестизначный код из приложения-аутентификатора.");
+      return;
+    }
+    const pending = pendingOtpRef.current;
+    if (!pending) return;
+    pendingOtpRef.current = null;
+    const code = commonOtpCode;
+    setCommonOtpCode("");
+    setCommonOtpError("");
+    setCommonOtpVisible(false);
+    pending.resolve(code);
+  }
+
+  function cancelCommonOtp() {
+    const pending = pendingOtpRef.current;
+    pendingOtpRef.current = null;
+    setCommonOtpVisible(false);
+    setCommonOtpCode("");
+    setCommonOtpError("");
+    pending?.reject(new Error("Подтверждение браузерной авторизации отменено."));
+  }
+
   async function fullLogin(account: Account) {
     const savedPassword = await loadPassword(account.phone);
     if (!savedPassword) { appendLog(`Авторизация ${account.phone}: сохранённый пароль отсутствует`); requestPassword(account); throw new Error("AUTH_REQUIRED"); }
@@ -554,19 +593,34 @@ export default function HomeScreen() {
     appendLog(`Авторизация ${account.phone}: исходный запрос успешно повторён после полного входа`);
     return result;
   }
-  async function getFreshCommonSession(account: Account) {
-    const savedPassword = await loadPassword(account.phone);
-    if (!savedPassword) throw new Error("Для общего API нужен сохранённый пароль. Выполните вход в аккаунт ещё раз.");
-    appendLog(`Общий API ${account.phone}: выполняется вход по сохранённому паролю`);
-    try {
-      const session = await commonApiLogin(commonApiPhone(account.phone), savedPassword);
-      await saveWebSession(account.phone, session);
-      appendLog(`Общий API ${account.phone}: новая web-сессия получена`);
-      return session;
-    } catch (error) {
-      appendLog(`Общий API ${account.phone}: вход не выполнен · ${friendlyApiError(error)}`);
-      throw error;
+  function getFreshCommonSession(account: Account): Promise<string> {
+    const active = commonLoginRef.current;
+    if (active) {
+      if (active.phone === account.phone) return active.task;
+      return Promise.reject(new Error("Сначала завершите подтверждение входа в предыдущий аккаунт."));
     }
+    const task = (async () => {
+      const savedPassword = await loadPassword(account.phone);
+      if (!savedPassword) throw new Error("Для браузерного API нужен сохранённый пароль. Выполните вход в аккаунт ещё раз.");
+      appendLog(`Браузерный API ${account.phone}: выполняется вход по сохранённому паролю`);
+      try {
+        const session = await commonApiLogin(commonApiPhone(account.phone), savedPassword, message => {
+          appendLog(`Браузерный API ${account.phone}: запрошен дополнительный код подтверждения`);
+          return requestCommonOtp(message);
+        });
+        await saveWebSession(account.phone, session);
+        appendLog(`Браузерный API ${account.phone}: вход подтверждён, web-сессия получена`);
+        return session;
+      } catch (error) {
+        appendLog(`Браузерный API ${account.phone}: вход не выполнен · ${friendlyApiError(error)}`);
+        throw error;
+      }
+    })();
+    commonLoginRef.current = { phone: account.phone, task };
+    void task.finally(() => {
+      if (commonLoginRef.current?.task === task) commonLoginRef.current = null;
+    }).catch(() => {});
+    return task;
   }
   async function commonCids(account: Account) {
     const saved = await loadWebSession(account.phone);
@@ -981,6 +1035,20 @@ export default function HomeScreen() {
           <SecondaryButton title="Отмена" onPress={() => setAddVisible(false)} />
         </View></View>
       </KeyboardAvoidingView></Modal>
+
+      <Modal transparent visible={commonOtpVisible} animationType="fade" onRequestClose={cancelCommonOtp}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <View style={styles.overlay}><View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Подтверждение входа</Text>
+            <Text style={styles.appearanceNote}>Введите шестизначный код из приложения-аутентификатора для входа через браузерный API.</Text>
+            <TextInput style={styles.input} value={commonOtpCode} onChangeText={value => { setCommonOtpCode(value.replace(/\D/g, "").slice(0, 6)); setCommonOtpError(""); }}
+              keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} placeholder="000000" placeholderTextColor="#71857A" autoFocus selectTextOnFocus />
+            {commonOtpError ? <Text style={styles.inlineError}>{commonOtpError}</Text> : null}
+            <PrimaryButton title="Подтвердить" onPress={submitCommonOtp} />
+            <SecondaryButton title="Отмена" onPress={cancelCommonOtp} />
+          </View></View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal transparent visible={updateDownloading} animationType="fade" onRequestClose={() => {}}>
         <View style={styles.dialogBackdrop}><View style={styles.dialogCard}>
